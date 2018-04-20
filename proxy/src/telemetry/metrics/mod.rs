@@ -502,8 +502,7 @@ impl Aggregate {
             Event::StreamRequestFail(ref req, ref fail) => {
                 let labels = Arc::new(RequestLabels::new(req));
                 self.update(|metrics| {
-                    *metrics.request_duration(&labels) +=
-                        fail.since_request_open;
+                    *metrics.request_duration(&labels) += fail.since_request_open;
                     *metrics.request_total(&labels).incr();
                 })
             },
@@ -512,8 +511,7 @@ impl Aggregate {
                 let labels = Arc::new(RequestLabels::new(req));
                 self.update(|metrics| {
                     *metrics.request_total(&labels).incr();
-                    *metrics.request_duration(&labels) +=
-                        end.since_request_open;
+                    *metrics.request_duration(&labels) += end.since_request_open;
                 })
             },
 
@@ -524,7 +522,7 @@ impl Aggregate {
                 ));
                 self.update(|metrics| {
                     *metrics.response_total(&labels).incr();
-                    *metrics.response_duration(&labels) +=  end.since_response_open;
+                    *metrics.response_duration(&labels) += end.since_response_open;
                     *metrics.response_latency(&labels) += end.since_request_open;
                 });
             },
