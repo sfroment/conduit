@@ -54,6 +54,14 @@ impl Request {
         Arc::new(r)
     }
 
+    pub fn proxy(&self) -> &Arc<ctx::Proxy> {
+        &self.server.proxy
+    }
+
+    pub fn client(&self) -> &Arc<ctx::transport::Client> {
+        &self.client
+    }
+
     pub fn dst_labels(&self) -> Option<&DstLabelsWatch> {
         self.client.dst_labels.as_ref()
     }
@@ -67,5 +75,13 @@ impl Response {
         };
 
         Arc::new(r)
+    }
+
+    pub fn proxy(&self) -> &Arc<ctx::Proxy> {
+        self.request.proxy()
+    }
+
+    pub fn client(&self) -> &Arc<ctx::transport::Client> {
+        self.request.client()
     }
 }

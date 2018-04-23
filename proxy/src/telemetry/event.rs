@@ -87,15 +87,15 @@ impl Event {
         }
     }
 
-    pub fn proxy(&self) -> &Arc<ctx::Proxy> {
+    pub fn proxy(&self) -> &ctx::Proxy {
         match *self {
             Event::TransportOpen(ref ctx) | Event::TransportClose(ref ctx, _) => ctx.proxy(),
             Event::StreamRequestOpen(ref req) |
             Event::StreamRequestFail(ref req, _) |
-            Event::StreamRequestEnd(ref req, _) => &req.server.proxy,
+            Event::StreamRequestEnd(ref req, _) => req.server.proxy.as_ref(),
             Event::StreamResponseOpen(ref rsp, _) |
             Event::StreamResponseFail(ref rsp, _) |
-            Event::StreamResponseEnd(ref rsp, _) => &rsp.request.server.proxy,
+            Event::StreamResponseEnd(ref rsp, _) => rsp.request.server.proxy.as_ref(),
         }
     }
 }
