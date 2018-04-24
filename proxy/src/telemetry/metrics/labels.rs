@@ -9,17 +9,17 @@ pub struct DstLabels {
     original: Arc<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct AppendLabels<A: FmtLabels, B: FmtLabels>(A, B);
+#[derive(Debug)]
+pub struct AppendLabels<'a, A: FmtLabels + 'a, B: FmtLabels + 'a>(&'a A, &'a B);
 
 pub trait FmtLabels {
     fn is_empty(&self) -> bool;
 
     fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result;
 
-    fn append<B: FmtLabels>(self, b: B) -> AppendLabels<Self, B>
+    fn append<'a, B: FmtLabels>(&'a self, b: &'a B) -> AppendLabels<'a, Self, B>
     where
-        Self: ::std::marker::Sized
+        Self: ::std::marker::Sized,
     {
         AppendLabels(self, b)
     }
@@ -111,6 +111,19 @@ impl<'a> FmtLabels for &'a str {
     }
 }
 
+impl<F> FmtLabels for F
+where
+    F: Fn(&mut fmt::Formatter) -> fmt::Result
+{
+    fn is_empty(&self) -> bool {
+        false
+    }
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (self)(f)
+    }
+}
+
 impl FmtLabels for () {
     fn is_empty(&self) -> bool {
         true
@@ -121,7 +134,7 @@ impl FmtLabels for () {
     }
 }
 
-impl<A: FmtLabels, B: FmtLabels> FmtLabels for AppendLabels<A, B> {
+impl<'a, A: FmtLabels + 'a, B: FmtLabels + 'a> FmtLabels for AppendLabels<'a, A, B> {
     fn is_empty(&self) -> bool {
         self.0.is_empty() && self.1.is_empty()
     }

@@ -217,7 +217,7 @@ impl ProxyTree {
         L: FmtLabels + Clone
     {
         for (ref class, ref tree) in &self.by_dst {
-            let dst_labels = labels.clone().append(class.labels.clone());
+            let dst_labels = labels.append(&class.labels);
             tree.prometheus_fmt(f, &dst_labels)?;
         }
 
@@ -260,8 +260,12 @@ impl DstTree {
         self.accept_metrics.prometheus_fmt(f, labels)?;
         self.connect_metrics.prometheus_fmt(f, labels)?;
 
-        for (ref _class, ref _tree) in &self.by_http_request {
-            unimplemented!()
+        for (ref class, ref tree) in &self.by_http_request {
+            let label_authority = |f: &mut fmt::Formatter| {
+                write!(f, "authority={}", class.authority)
+            };
+            let labels = labels.append(&label_authority);
+            tree.prometheus_fmt(f, &labels)?;
         }
 
         Ok(())
@@ -317,6 +321,28 @@ impl HttpRequestTree {
 
         end.add(fail.since_request_open);
     }
+
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels
+    {
+        self.metrics.total.prometheus_fmt(f, "request_total", labels)?;
+
+        for (ref class, ref tree) in &self.by_response {
+            let status_label = |f: &mut fmt::Formatter| {
+                match *class {
+                    &HttpResponseClass::Response { status_code } =>
+                        write!(f, "status={}", status_code),
+                    &HttpResponseClass::Error { reason } =>
+                        write!(f, "error={}", reason),
+                }
+            };
+            let l = labels.append(&status_label);
+            tree.prometheus_fmt(f, &l)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl HttpResponseTree {
@@ -353,12 +379,26 @@ impl HttpResponseTree {
             .or_insert_with(Default::default)
             .add(fail.since_request_open)
     }
+
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels
+    {
+        unimplemented!()
+    }
 }
 
 impl HttpEndMetrics {
     fn add(&mut self, latency: Duration) {
         self.total.incr();
         self.latency.observe(latency);
+    }
+
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels
+    {
+        unimplemented!()
     }
 }
 
