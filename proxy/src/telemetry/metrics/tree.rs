@@ -384,17 +384,23 @@ impl HttpResponseTree {
         L: FmtLabels
     {
         for (ref class, ref metrics) in &self.by_end {
-            let end_label = |f: &mut fmt::Formatter| {
-                match *class {
-                    &HttpEndClass::Eos => Ok(()),
-                    &HttpEndClass::Grpc { status_code } =>
-                        write!(f, "grpc_status_code=\"{}\"", status_code),
-                    &HttpEndClass::Error { reason } =>
-                        write!(f, "error=\"{}\"", reason),
+            match *class {
+                &HttpEndClass::Eos => {
+                    metrics.prometheus_fmt(f, labels)?;
                 }
-            };
-
-            metrics.prometheus_fmt(f, &labels.append(&end_label))?;
+                &HttpEndClass::Grpc { status_code } => {
+                    let l = |f: &mut fmt::Formatter| {
+                        write!(f, "grpc_status_code=\"{}\"", status_code)
+                    };
+                    metrics.prometheus_fmt(f, &labels.append(&l))?;
+                }
+                &HttpEndClass::Error { reason } => {
+                    let l = |f: &mut fmt::Formatter| {
+                        write!(f, "error=\"{}\"", reason)
+                    };
+                    metrics.prometheus_fmt(f, &labels.append(&l))?;
+                }
+            }
         }
 
         Ok(())
