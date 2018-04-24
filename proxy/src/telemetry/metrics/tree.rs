@@ -262,7 +262,7 @@ impl DstTree {
 
         for (ref class, ref tree) in &self.by_http_request {
             let label_authority = |f: &mut fmt::Formatter| {
-                write!(f, "authority={}", class.authority)
+                write!(f, "authority=\"{}\"", class.authority)
             };
             let labels = labels.append(&label_authority);
             tree.prometheus_fmt(f, &labels)?;
@@ -332,9 +332,9 @@ impl HttpRequestTree {
             let status_label = |f: &mut fmt::Formatter| {
                 match *class {
                     &HttpResponseClass::Response { status_code } =>
-                        write!(f, "status_code={}", status_code),
+                        write!(f, "status_code=\"{}\"", status_code),
                     &HttpResponseClass::Error { reason } =>
-                        write!(f, "error={}", reason),
+                        write!(f, "error=\"{}\"", reason),
                 }
             };
             tree.prometheus_fmt(f, &labels.append(&status_label))?;
@@ -388,9 +388,9 @@ impl HttpResponseTree {
                 match *class {
                     &HttpEndClass::Eos => Ok(()),
                     &HttpEndClass::Grpc { status_code } =>
-                        write!(f, "grpc_status_code={}", status_code),
+                        write!(f, "grpc_status_code=\"{}\"", status_code),
                     &HttpEndClass::Error { reason } =>
-                        write!(f, "error={}", reason),
+                        write!(f, "error=\"{}\"", reason),
                 }
             };
 
