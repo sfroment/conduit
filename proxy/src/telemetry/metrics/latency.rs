@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use std::{fmt, iter, ops, slice, u32};
+use std::{fmt, ops, u32};
 use std::num::Wrapping;
 use std::time::Duration;
 
@@ -106,8 +106,7 @@ impl Histogram {
         let measurement = measurement.into();
         let i = BUCKET_BOUNDS.iter()
             .position(|max| &measurement <= max)
-            .expect("latency value greater than u32::MAX; this shouldn't be \
-                     possible.");
+            .expect("latency must be less than u32::MAX");
         self.buckets[i].incr();
         self.sum += Wrapping(measurement.0 as u64);
     }
@@ -117,10 +116,56 @@ impl Histogram {
     /// The sum is returned as a floating-point value, as it's
     /// internally recorded in tenths of milliseconds, which could
     /// represent a number of milliseconds with a fractional part.
-    pub fn sum_in_ms(&self) -> f64 {
+    fn sum_in_ms(&self) -> f64 {
         self.sum.0 as f64 / MS_TO_TENTHS_OF_MS as f64
     }
 
+    pub fn promethus_fmt<F>(&self, f: &mut fmt::Formatter, name: &str, mut fmt_labels: Option<F>) -> fmt::Result
+    where F: FnMut(&mut fmt::Formatter) -> fmt::Result
+    {
+        // Look up the bucket numbers against the BUCKET_BOUNDS array
+        // to turn them into upper bounds.
+        let bounds_and_counts = self.buckets.iter()
+            .enumerate()
+            .map(|(num, &count)| {
+                let c: u64 = count.into();
+                (BUCKET_BOUNDS[num], c)
+            });
+
+        // Since Prometheus expects each bucket's value to be the sum of
+        // the number of values in this bucket and all lower buckets,
+        // track the total count here.
+        let mut total_count = 0;
+        for (le, count) in bounds_and_counts {
+            // Add this bucket's count to the total count.
+            total_count += count;
+            write!(f, "{}_bucket{{", name)?;
+            if let Some(fmt_labels) = fmt_labels {
+                fmt_labels(f)?;
+                write!(f, ",")?;
+            }
+            writeln!(f, "le=\"{}\"}} {}", le, total_count)?;
+        }
+
+        // Print the total count and histogram sum stats.
+        write!(f, "{}_count", name)?;
+        if let Some(fmt_labels) = fmt_labels {
+            write!(f, "{{")?;
+            fmt_labels(f)?;
+            write!(f, "}}")?;
+        }
+        writeln!(f, "{}", total_count)?;
+
+        write!(f, "{}_sum", name)?;
+        if let Some(fmt_labels) = fmt_labels {
+            write!(f, "{{")?;
+            fmt_labels(f)?;
+            write!(f, "}}")?;
+        }
+        writeln!(f, "{}", self.sum_in_ms())?;
+
+        Ok(())
+    }
 }
 
 impl<I> ops::AddAssign<I> for Histogram
@@ -130,19 +175,6 @@ where
     #[inline]
     fn add_assign(&mut self, measurement: I) {
         self.observe(measurement)
-    }
-
-}
-
-impl<'a> IntoIterator for &'a Histogram {
-    type Item = u64;
-    type IntoIter = iter::Map<
-        slice::Iter<'a, Counter>,
-        fn(&'a Counter) -> u64
-    >;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.buckets.iter().map(|&count| count.into())
     }
 
 }

@@ -26,7 +26,6 @@
 //! labels, we can add new labels or modify the existing ones without having
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
-use std::fmt::Write;
 use std::sync::{Arc, Mutex};
 
 use futures::future::{self, FutureResult};
@@ -99,8 +98,10 @@ impl HyperService for Serve {
                 .with_status(StatusCode::NotFound));
         }
 
-        let metrics = self.metrics.lock().expect("metrics lock");
-        let body = Self::format_metrics(&metrics);
+        let body = {
+            let metrics = self.metrics.lock().expect("metrics lock");
+            format!("{}", metrics)
+        };
 
         let rsp = HyperResponse::new()
             .with_header(ContentLength(body.len() as u64))
@@ -108,14 +109,5 @@ impl HyperService for Serve {
             .with_body(body);
 
         future::ok(rsp)
-    }
-}
-
-impl Serve {
-    fn format_metrics(_metrics: &tree::Root) -> String {
-        let mut out = String::new();
-        write!(out, "{}", help::HTTP).expect("format HTTP help");
-        write!(out, "{}", help::TCP).expect("format TCP help");
-        out
     }
 }

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops};
 use std::num::Wrapping;
 
 /// A Prometheus counter is represented by a `Wrapping` unsigned 64-bit int.
@@ -47,15 +47,15 @@ impl Into<u64> for Counter {
     }
 }
 
-// impl ops::Add for Counter {
-//     type Output = Self;
-//     fn add(self, Counter(rhs): Self) -> Self::Output {
-//         Counter(self.0 + rhs)
-//     }
-// }
+impl ops::Add for Counter {
+    type Output = Self;
+    fn add(self, Counter(rhs): Self) -> Self::Output {
+        Counter(self.0 + rhs)
+    }
+}
 
-// impl ops::AddAssign<u64> for Counter {
-//     fn add_assign(&mut self, rhs: u64) {
-//         (*self).0 += Wrapping(rhs)
-//     }
-// }
+impl ops::AddAssign<u64> for Counter {
+    fn add_assign(&mut self, rhs: u64) {
+        (*self).0 += Wrapping(rhs)
+    }
+}
