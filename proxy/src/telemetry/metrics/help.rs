@@ -86,6 +86,7 @@ impl<'a> fmt::Display for Section<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for help in self.0 {
             help.fmt(f)?;
+            writeln!(f, "")?;
         }
         Ok(())
     }

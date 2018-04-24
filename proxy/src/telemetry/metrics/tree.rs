@@ -31,15 +31,26 @@ struct DstClass {
 
 #[derive(Clone, Debug, Default)]
 struct DstTree {
-    accept_metrics: TransportMetrics,
-    connect_metrics: TransportMetrics,
+    accept_metrics: TransportTree,
+    connect_metrics: TransportTree,
 
     by_http_request: IndexMap<HttpRequestClass, HttpRequestTree>,
 }
 
 #[derive(Clone, Debug, Default)]
-struct TransportMetrics {
+struct TransportTree {
     open_total: Counter,
+    by_success: IndexMap<TransportEndClass, TransportEndMetrics>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum TransportEndClass {
+    Success,
+    Failure,
+}
+
+#[derive(Clone, Debug, Default)]
+struct TransportEndMetrics {
     close_total: Counter,
     lifetime: Histogram,
     rx_bytes_total: Counter,
@@ -224,7 +235,7 @@ impl ProxyTree {
 }
 
 impl DstTree {
-    fn transport_mut(&mut self, ctx: &ctx::transport::Ctx) -> &mut TransportMetrics {
+    fn transport_mut(&mut self, ctx: &ctx::transport::Ctx) -> &mut TransportTree {
         match *ctx {
             ctx::transport::Ctx::Client(_) => &mut self.connect_metrics,
             ctx::transport::Ctx::Server(_) => &mut self.accept_metrics,
@@ -383,31 +394,32 @@ impl HttpResponseTree {
             let rsp_labels = |f: &mut fmt::Formatter| {
                 match *rsp_class {
                     HttpResponseClass::Error { reason } => {
-                        write!(f, "classification=\"failure\",")?;
-                        write!(f, "error=\"{}\"", reason)
+                        write!(f, "{},error=\"{}\"", FAILURE_CLASSIFICATION, reason)
                     }
 
                     HttpResponseClass::Response { status_code: http_status } => {
                         match *end_class {
                             &HttpEndClass::Eos => {
-                                write!(f, "classification=\"{}\",",
-                                    if http_status < 500 { "success" }
-                                    else { "failure" }
-                                )?;
+                                if http_status < 500 {
+                                    write!(f, "{},", SUCCESS_CLASSIFICATION)?;
+                                } else {
+                                    write!(f, "{},", FAILURE_CLASSIFICATION)?;
+                                }
                                 write!(f, "status_code=\"{}\"", http_status)
                             },
 
                             &HttpEndClass::Grpc { status_code: grpc_status } => {
-                                write!(f, "classification=\"{}\",",
-                                    if grpc_status == 0 { "success" }
-                                    else { "failure" }
-                                )?;
+                                if grpc_status < 500 {
+                                    write!(f, "{},", SUCCESS_CLASSIFICATION)?;
+                                } else {
+                                    write!(f, "{},", FAILURE_CLASSIFICATION)?;
+                                }
                                 write!(f, "status_code=\"{}\"", http_status)?;
                                 write!(f, "grpc_status_code=\"{}\"", grpc_status)
                             },
 
                             &HttpEndClass::Error { reason } => {
-                                write!(f, "classification=\"failure\",")?;
+                                write!(f, "{},", FAILURE_CLASSIFICATION)?;
                                 write!(f, "error=\"{}\"", reason)
                             },
                         }
@@ -440,16 +452,21 @@ impl HttpEndMetrics {
     }
 }
 
-impl TransportMetrics {
+const SUCCESS_CLASSIFICATION: &'static str = "classification=\"success\"";
+const FAILURE_CLASSIFICATION: &'static str = "classification=\"failure\"";
+
+impl TransportTree {
     fn open(&mut self) {
         self.open_total.incr();
     }
 
     fn close(&mut self, close: &event::TransportClose) {
-        self.lifetime.observe(close.duration);
-        self.rx_bytes_total += close.rx_bytes;
-        self.tx_bytes_total += close.tx_bytes;
-        self.close_total.incr();
+        let class = if close.clean { TransportEndClass::Success } else { TransportEndClass::Failure };
+        let metrics = self.by_success.entry(class).or_insert_with(Default::default);
+        metrics.lifetime.observe(close.duration);
+        metrics.rx_bytes_total += close.rx_bytes;
+        metrics.tx_bytes_total += close.tx_bytes;
+        metrics.close_total.incr();
     }
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
@@ -457,10 +474,29 @@ impl TransportMetrics {
         L: FmtLabels,
     {
         self.open_total.prometheus_fmt(f, "tcp_open_total", labels)?;
-        self.close_total
-            .prometheus_fmt(f, "tcp_open_total", labels)?;
-        self.lifetime
-            .prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
+
+        for (ref class, ref metrics) in &self.by_success {
+            let l = match *class {
+                &TransportEndClass::Success => SUCCESS_CLASSIFICATION,
+                &TransportEndClass::Failure => FAILURE_CLASSIFICATION,
+            };
+
+            metrics.prometheus_fmt(f, &labels.append(&l))?;
+        }
+
+        Ok(())
+    }
+}
+
+impl TransportEndMetrics {
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels,
+    {
+        self.close_total.prometheus_fmt(f, "tcp_close_total", labels)?;
+        self.lifetime.prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
+        self.rx_bytes_total.prometheus_fmt(f, "received_bytes", labels)?;
+        self.tx_bytes_total.prometheus_fmt(f, "sent_bytes", labels)?;
 
         Ok(())
     }
