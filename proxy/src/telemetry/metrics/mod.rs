@@ -219,9 +219,9 @@ impl MetricsTree {
             },
 
             Event::TransportOpen(ref ctx) => {
-                let dst = match *ctx.as_ref() {
-                    ctx::transport::Ctx::Client(dst) => Some(dst.as_ref()),
-                    ctx::transport::Ctx::Server(_) => None,
+                let dst = match ctx.as_ref() {
+                    &ctx::transport::Ctx::Client(ref dst) => Some(dst.as_ref()),
+                    &ctx::transport::Ctx::Server(_) => None,
                 };
                 self.proxy_mut(ctx.proxy().as_ref())
                     .destination_mut(dst)
@@ -230,9 +230,9 @@ impl MetricsTree {
             },
 
             Event::TransportClose(ref ctx, ref close) => {
-                let dst = match *ctx.as_ref() {
-                    ctx::transport::Ctx::Client(dst) => Some(dst.as_ref()),
-                    ctx::transport::Ctx::Server(_) => None,
+                let dst = match ctx.as_ref() {
+                    &ctx::transport::Ctx::Client(ref dst) => Some(dst.as_ref()),
+                    &ctx::transport::Ctx::Server(_) => None,
                 };
                 self.proxy_mut(ctx.proxy().as_ref())
                     .destination_mut(dst)
