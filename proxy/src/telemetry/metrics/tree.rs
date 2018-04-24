@@ -2,7 +2,7 @@ use http;
 use indexmap::IndexMap;
 use std::fmt::{self, Write};
 use std::sync::Arc;
-use std::time::{UNIX_EPOCH, Duration};
+use std::time::{Duration, UNIX_EPOCH};
 
 use ctx;
 use telemetry::event::{self, Event};
@@ -91,17 +91,19 @@ pub struct HttpEndMetrics {
 
 impl Root {
     pub fn new(process: &Arc<ctx::Process>) -> Self {
-        let start_time = process.start_time
+        let start_time = process
+            .start_time
             .duration_since(UNIX_EPOCH)
-            .expect(
-                "process start time should not be before the beginning \
-                 of the Unix epoch"
-            )
+            .expect("process start time should not be before the beginning of the Unix epoch")
             .as_secs();
 
         Self {
-            inbound: ProxyTree { by_dst: IndexMap::new() },
-            outbound: ProxyTree { by_dst: IndexMap::new() },
+            inbound: ProxyTree {
+                by_dst: IndexMap::new(),
+            },
+            outbound: ProxyTree {
+                by_dst: IndexMap::new(),
+            },
             start_time,
         }
     }
@@ -116,7 +118,6 @@ impl Root {
     pub fn record(&mut self, event: &Event) {
         trace!("Metrics::record({:?})", event);
         match *event {
-
             Event::TransportOpen(ref ctx) => {
                 let dst = match ctx.as_ref() {
                     &ctx::transport::Ctx::Client(ref dst) => Some(dst.as_ref()),
@@ -165,7 +166,7 @@ impl Root {
                     .dst_mut(Some(res.client().as_ref()))
                     .http_response_mut(res.as_ref())
                     .open(open);
-            }
+            },
 
             Event::StreamResponseEnd(ref res, ref end) => {
                 self.proxy_mut(res.proxy().as_ref())
@@ -203,8 +204,7 @@ impl fmt::Display for Root {
 
 impl ProxyTree {
     fn dst_mut(&mut self, ctx: Option<&ctx::transport::Client>) -> &mut DstTree {
-        let labels = ctx
-            .and_then(|c| c.dst_labels.as_ref())
+        let labels = ctx.and_then(|c| c.dst_labels.as_ref())
             .and_then(|w| w.borrow().clone());
 
         self.by_dst
@@ -214,7 +214,7 @@ impl ProxyTree {
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
-        L: FmtLabels + Clone
+        L: FmtLabels + Clone,
     {
         for (ref class, ref tree) in &self.by_dst {
             let dst_labels = labels.append(&class.labels);
@@ -229,7 +229,7 @@ impl DstTree {
     fn transport_mut(&mut self, ctx: &ctx::transport::Ctx) -> &mut TransportMetrics {
         match *ctx {
             ctx::transport::Ctx::Client(_) => &mut self.connect_metrics,
-            ctx::transport::Ctx::Server(_) => &mut self.accept_metrics
+            ctx::transport::Ctx::Server(_) => &mut self.accept_metrics,
         }
     }
 
@@ -255,15 +255,14 @@ impl DstTree {
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
         self.accept_metrics.prometheus_fmt(f, labels)?;
         self.connect_metrics.prometheus_fmt(f, labels)?;
 
         for (ref class, ref tree) in &self.by_http_request {
-            let label_authority = |f: &mut fmt::Formatter| {
-                write!(f, "authority=\"{}\"", class.authority)
-            };
+            let label_authority =
+                |f: &mut fmt::Formatter| write!(f, "authority=\"{}\"", class.authority);
             let labels = labels.append(&label_authority);
             tree.prometheus_fmt(f, &labels)?;
         }
@@ -324,20 +323,14 @@ impl HttpRequestTree {
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
-        self.metrics.total.prometheus_fmt(f, "request_total", labels)?;
+        self.metrics
+            .total
+            .prometheus_fmt(f, "request_total", labels)?;
 
         for (ref class, ref tree) in &self.by_response {
-            let status_label = |f: &mut fmt::Formatter| {
-                match *class {
-                    &HttpResponseClass::Response { status_code } =>
-                        write!(f, "status_code=\"{}\"", status_code),
-                    &HttpResponseClass::Error { reason } =>
-                        write!(f, "error=\"{}\"", reason),
-                }
-            };
-            tree.prometheus_fmt(f, &labels.append(&status_label))?;
+            tree.prometheus_fmt(f, class, labels)?;
         }
 
         Ok(())
@@ -379,28 +372,52 @@ impl HttpResponseTree {
             .add(fail.since_request_open)
     }
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    fn prometheus_fmt<L>(
+        &self,
+        f: &mut fmt::Formatter,
+        rsp_class: &HttpResponseClass,
+        labels: &L,
+    ) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
-        for (ref class, ref metrics) in &self.by_end {
-            match *class {
-                &HttpEndClass::Eos => {
-                    metrics.prometheus_fmt(f, labels)?;
-                }
-                &HttpEndClass::Grpc { status_code } => {
-                    let l = |f: &mut fmt::Formatter| {
-                        write!(f, "grpc_status_code=\"{}\"", status_code)
-                    };
-                    metrics.prometheus_fmt(f, &labels.append(&l))?;
-                }
-                &HttpEndClass::Error { reason } => {
-                    let l = |f: &mut fmt::Formatter| {
+        for (ref end_class, ref metrics) in &self.by_end {
+            let rsp_labels = |f: &mut fmt::Formatter| {
+                match *rsp_class {
+                    HttpResponseClass::Error { reason } => {
+                        write!(f, "classification=\"failure\",")?;
                         write!(f, "error=\"{}\"", reason)
-                    };
-                    metrics.prometheus_fmt(f, &labels.append(&l))?;
+                    }
+
+                    HttpResponseClass::Response { status_code: http_status } => {
+                        match *end_class {
+                            &HttpEndClass::Eos => {
+                                write!(f, "classification=\"{}\",",
+                                    if http_status < 500 { "success" }
+                                    else { "failure" }
+                                )?;
+                                write!(f, "status_code=\"{}\"", http_status)
+                            },
+
+                            &HttpEndClass::Grpc { status_code: grpc_status } => {
+                                write!(f, "classification=\"{}\",",
+                                    if grpc_status == 0 { "success" }
+                                    else { "failure" }
+                                )?;
+                                write!(f, "status_code=\"{}\"", http_status)?;
+                                write!(f, "grpc_status_code=\"{}\"", grpc_status)
+                            },
+
+                            &HttpEndClass::Error { reason } => {
+                                write!(f, "classification=\"failure\",")?;
+                                write!(f, "error=\"{}\"", reason)
+                            },
+                        }
+                    }
                 }
-            }
+            };
+
+            metrics.prometheus_fmt(f, &labels.append(&rsp_labels))?;
         }
 
         Ok(())
@@ -415,10 +432,11 @@ impl HttpEndMetrics {
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
         self.total.prometheus_fmt(f, "response_total", labels)?;
-        self.latency.prometheus_fmt(f, "response_latency_ms", labels)?;
+        self.latency
+            .prometheus_fmt(f, "response_latency_ms", labels)?;
 
         Ok(())
     }
@@ -438,11 +456,13 @@ impl TransportMetrics {
 
     fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
         self.open_total.prometheus_fmt(f, "tcp_open_total", labels)?;
-        self.close_total.prometheus_fmt(f, "tcp_open_total", labels)?;
-        self.lifetime.prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
+        self.close_total
+            .prometheus_fmt(f, "tcp_open_total", labels)?;
+        self.lifetime
+            .prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
 
         Ok(())
     }
