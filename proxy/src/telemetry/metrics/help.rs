@@ -7,23 +7,9 @@ pub const HTTP: Section = Section(&[
         help: "A counter of the number of requests the proxy has received.",
     },
     Help {
-        kind: "histogram",
-        name: "request_duration_ms",
-        help: "A histogram of the duration of a request. This is measured from \
-            when the request headers are received to when the request \
-            stream has completed.",
-    },
-    Help {
         kind: "counter",
         name: "response_total",
         help: "A counter of the number of responses the proxy has received.",
-    },
-    Help {
-        kind: "histogram",
-        name: "response_duration_ms",
-        help: "A histogram of the duration of a response. This is measured from \
-            when the response headers are received to when the response \
-            stream has completed.",
     },
     Help {
         kind: "histogram",

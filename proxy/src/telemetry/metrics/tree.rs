@@ -332,13 +332,12 @@ impl HttpRequestTree {
             let status_label = |f: &mut fmt::Formatter| {
                 match *class {
                     &HttpResponseClass::Response { status_code } =>
-                        write!(f, "status={}", status_code),
+                        write!(f, "status_code={}", status_code),
                     &HttpResponseClass::Error { reason } =>
                         write!(f, "error={}", reason),
                 }
             };
-            let l = labels.append(&status_label);
-            tree.prometheus_fmt(f, &l)?;
+            tree.prometheus_fmt(f, &labels.append(&status_label))?;
         }
 
         Ok(())
@@ -384,7 +383,21 @@ impl HttpResponseTree {
     where
         L: FmtLabels
     {
-        unimplemented!()
+        for (ref class, ref metrics) in &self.by_end {
+            let end_label = |f: &mut fmt::Formatter| {
+                match *class {
+                    &HttpEndClass::Eos => Ok(()),
+                    &HttpEndClass::Grpc { status_code } =>
+                        write!(f, "grpc_status_code={}", status_code),
+                    &HttpEndClass::Error { reason } =>
+                        write!(f, "error={}", reason),
+                }
+            };
+
+            metrics.prometheus_fmt(f, &labels.append(&end_label))?;
+        }
+
+        Ok(())
     }
 }
 
@@ -398,7 +411,10 @@ impl HttpEndMetrics {
     where
         L: FmtLabels
     {
-        unimplemented!()
+        self.total.prometheus_fmt(f, "response_total", labels)?;
+        self.latency.prometheus_fmt(f, "response_latency_ms", labels)?;
+
+        Ok(())
     }
 }
 
