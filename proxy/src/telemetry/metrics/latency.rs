@@ -2,7 +2,8 @@
 use std::{fmt, iter, ops, slice, u32};
 use std::num::Wrapping;
 use std::time::Duration;
-use super::Counter;
+
+use super::counter::Counter;
 
 /// The number of buckets in a  latency histogram.
 pub const NUM_BUCKETS: usize = 26;
