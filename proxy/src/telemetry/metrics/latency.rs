@@ -3,6 +3,8 @@ use std::{fmt, ops, u32};
 use std::num::Wrapping;
 use std::time::Duration;
 
+use super::labels::FmtLabels;
+
 use super::counter::Counter;
 
 /// The number of buckets in a  latency histogram.
@@ -120,8 +122,9 @@ impl Histogram {
         self.sum.0 as f64 / MS_TO_TENTHS_OF_MS as f64
     }
 
-    pub fn promethus_fmt<F>(&self, f: &mut fmt::Formatter, name: &str, mut fmt_labels: Option<F>) -> fmt::Result
-    where F: FnMut(&mut fmt::Formatter) -> fmt::Result
+    pub fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels,
     {
         // Look up the bucket numbers against the BUCKET_BOUNDS array
         // to turn them into upper bounds.
@@ -140,8 +143,8 @@ impl Histogram {
             // Add this bucket's count to the total count.
             total_count += count;
             write!(f, "{}_bucket{{", name)?;
-            if let Some(fmt_labels) = fmt_labels {
-                fmt_labels(f)?;
+            if !labels.is_empty() {
+                labels.fmt_labels(f)?;
                 write!(f, ",")?;
             }
             writeln!(f, "le=\"{}\"}} {}", le, total_count)?;
@@ -149,17 +152,17 @@ impl Histogram {
 
         // Print the total count and histogram sum stats.
         write!(f, "{}_count", name)?;
-        if let Some(fmt_labels) = fmt_labels {
+        if !labels.is_empty() {
             write!(f, "{{")?;
-            fmt_labels(f)?;
+            labels.fmt_labels(f)?;
             write!(f, "}}")?;
         }
         writeln!(f, "{}", total_count)?;
 
         write!(f, "{}_sum", name)?;
-        if let Some(fmt_labels) = fmt_labels {
+        if !labels.is_empty() {
             write!(f, "{{")?;
-            fmt_labels(f)?;
+            labels.fmt_labels(f)?;
             write!(f, "}}")?;
         }
         writeln!(f, "{}", self.sum_in_ms())?;

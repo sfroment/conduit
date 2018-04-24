@@ -1,6 +1,8 @@
 use std::{fmt, ops};
 use std::num::Wrapping;
 
+use super::labels::FmtLabels;
+
 /// A Prometheus counter is represented by a `Wrapping` unsigned 64-bit int.
 ///
 /// Counters always explicitly wrap on overflows rather than panicking in
@@ -25,12 +27,6 @@ pub struct Counter(Wrapping<u64>);
 
 // ===== impl Counter =====
 
-impl fmt::Display for Counter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", (self.0).0 as f64)
-    }
-}
-
 impl Counter {
     /// Increment the counter by one.
     ///
@@ -38,6 +34,19 @@ impl Counter {
     pub fn incr(&mut self) -> &mut Self {
         (*self).0 += Wrapping(1);
         self
+    }
+
+    pub fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels,
+    {
+        write!(f, "{}", name)?;
+        if !labels.is_empty() {
+            write!(f, "{{")?;
+            labels.fmt_labels(f)?;
+            write!(f, "}}")?;
+        }
+        write!(f, " {}", self.0)
     }
 }
 

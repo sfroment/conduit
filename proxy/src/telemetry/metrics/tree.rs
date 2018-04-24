@@ -9,7 +9,7 @@ use telemetry::event::{self, Event};
 
 use super::counter::Counter;
 use super::help;
-use super::labels::DstLabels;
+use super::labels::{DstLabels, FmtLabels};
 use super::latency::Histogram;
 
 #[derive(Clone, Debug)]
@@ -191,8 +191,8 @@ impl fmt::Display for Root {
         write!(out, "{}", help::HTTP)?;
         write!(out, "{}", help::TCP)?;
 
-        self.inbound.prometheus_fmt(f, Some(|f: &mut fmt::Formatter| write!(f, "direction=\"inbound\"")))?;
-        self.outbound.prometheus_fmt(f, Some(|f: &mut fmt::Formatter| write!(f, "direction=\"outbound\"")))?;
+        self.inbound.prometheus_fmt(f, &"direction=\"inbound\"")?;
+        self.outbound.prometheus_fmt(f, &"direction=\"outbound\"")?;
 
         writeln!(out, "")?;
         writeln!(out, "process_start_time_seconds {}", self.start_time)?;
@@ -212,27 +212,13 @@ impl ProxyTree {
             .or_insert_with(Default::default)
     }
 
-    fn prometheus_fmt<F>(&self, f: &mut fmt::Formatter, mut fmt_labels: Option<F>) -> fmt::Result
-    where F: FnMut(&mut fmt::Formatter) -> fmt::Result
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels + Clone
     {
         for (ref class, ref tree) in &self.by_dst {
-            let dst_labels = match class.labels.as_ref() {
-                Some(ref dst_labels) if !dst_labels.as_map().is_empty() =>
-                    Some(dst_labels.as_str()),
-                _ => None,
-            };
-
-            tree.prometheus_fmt(f, |ref mut f| {
-                match (fmt_labels, dst_labels) {
-                    (Some(fmt_labels), Some(dst_labels)) => {
-                        fmt_labels(f)?;
-                        write!(f, ",{}", dst_labels)
-                    }
-                    (None,  Some(dst_labels)) => write!(f, "{}", dst_labels),
-                    (Some(fmt_labels),  None) => fmt_labels(f),
-                    (None, None) => Ok(()),
-                }
-            })?;
+            let dst_labels = labels.clone().append(class.labels.clone());
+            tree.prometheus_fmt(f, &dst_labels)?;
         }
 
         Ok(())
@@ -267,11 +253,18 @@ impl DstTree {
             .or_insert_with(Default::default)
     }
 
-    fn prometheus_fmt<F>(&self, f: &mut fmt::Formatter, mut fmt_dst_labels: F) -> fmt::Result
-    where F: FnMut(&mut fmt::Formatter) -> fmt::Result
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels
     {
-        let fmt_labels = |ref mut f| fmt_dst_labels(f);
-        unimplemented!()
+        self.accept_metrics.prometheus_fmt(f, labels)?;
+        self.connect_metrics.prometheus_fmt(f, labels)?;
+
+        for (ref _class, ref _tree) in &self.by_http_request {
+            unimplemented!()
+        }
+
+        Ok(())
     }
 }
 
@@ -381,18 +374,13 @@ impl TransportMetrics {
         self.close_total.incr();
     }
 
-    fn prometheus_fmt<F>(&self, f: &mut fmt::Formatter, mut fmt_labels: F) -> fmt::Result
-    where F: FnMut(&mut fmt::Formatter) -> fmt::Result
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels
     {
-        write!(f, "tcp_open_total {} {{", self.open_total)?;
-        fmt_labels(f)?;
-        writeln!(f, "}}")?;
-
-        write!(f, "tcp_close_total {} {{", self.close_total)?;
-        fmt_labels(f)?;
-        writeln!(f, "}}")?;
-
-        self.lifetime.promethus_fmt(f, "tcp_connection_duration_ms", Some(fmt_labels))?;
+        self.open_total.prometheus_fmt(f, "tcp_open_total", labels)?;
+        self.close_total.prometheus_fmt(f, "tcp_open_total", labels)?;
+        self.lifetime.prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
 
         Ok(())
     }

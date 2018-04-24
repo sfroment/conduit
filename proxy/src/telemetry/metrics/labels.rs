@@ -9,6 +9,22 @@ pub struct DstLabels {
     original: Arc<HashMap<String, String>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppendLabels<A: FmtLabels, B: FmtLabels>(A, B);
+
+pub trait FmtLabels {
+    fn is_empty(&self) -> bool;
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result;
+
+    fn append<B: FmtLabels>(self, b: B) -> AppendLabels<Self, B>
+    where
+        Self: ::std::marker::Sized
+    {
+        AppendLabels(self, b)
+    }
+}
+
 // ===== impl DstLabels ====
 
 impl DstLabels {
@@ -61,8 +77,65 @@ impl hash::Hash for DstLabels {
     }
 }
 
-impl fmt::Display for DstLabels {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.formatted.fmt(f)
+impl FmtLabels for DstLabels {
+    fn is_empty(&self) -> bool {
+        self.formatted.is_empty()
+    }
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self.formatted.as_ref(), f)
+    }
+}
+
+impl<L: FmtLabels> FmtLabels for Option<L> {
+    fn is_empty(&self) -> bool {
+        self.as_ref().map(|d| d.is_empty()).unwrap_or(true)
+    }
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(ref dst) = self.as_ref() {
+            dst.fmt_labels(f)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> FmtLabels for &'a str {
+    fn is_empty(&self) -> bool {
+        str::is_empty(self)
+    }
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl FmtLabels for () {
+    fn is_empty(&self) -> bool {
+        true
+    }
+
+    fn fmt_labels(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        Ok(())
+    }
+}
+
+impl<A: FmtLabels, B: FmtLabels> FmtLabels for AppendLabels<A, B> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty() && self.1.is_empty()
+    }
+
+    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match (self.0.is_empty(), self.1.is_empty()) {
+            (true, true) => Ok(()),
+            (false, true) => self.0.fmt_labels(f),
+            (true, false) => self.1.fmt_labels(f),
+            (false, false) => {
+                self.0.fmt_labels(f)?;
+                write!(f, ",")?;
+                self.1.fmt_labels(f)
+            }
+        }
     }
 }
