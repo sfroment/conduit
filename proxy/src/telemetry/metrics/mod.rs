@@ -272,8 +272,8 @@ impl DestinationTree {
     }
 
     fn http_response_mut(&mut self, rsp: &ctx::http::Response) -> &mut HttpResponseMetrics {
-        let status = rsp.status.as_u16();
-        let mut req = self.http_request_mut(rsp.request.as_ref());
+        let _status = rsp.status.as_u16();
+        let mut _req = self.http_request_mut(rsp.request.as_ref());
         unimplemented!()
     }
 }

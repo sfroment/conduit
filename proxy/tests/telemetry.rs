@@ -1,6 +1,7 @@
 #![deny(warnings)]
 #[macro_use]
 extern crate log;
+extern crate regex;
 
 #[macro_use]
 mod support;
@@ -402,48 +403,6 @@ fn metrics_endpoint_outbound_response_latency() {
         "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",classification=\"success\",status_code=\"200\"} 4");
 }
 
-// https://github.com/runconduit/conduit/issues/613
-#[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn metrics_endpoint_inbound_request_duration() {
-    let _ = env_logger::try_init();
-    let Fixture { client, metrics, proxy: _proxy } = Fixture::inbound();
-
-    // request with body should increment request_duration
-    info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
-
-    assert_contains!(metrics.get("/metrics"),
-        "request_duration_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\"} 1");
-
-    // request without body should also increment request_duration
-    info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
-
-    assert_contains!(metrics.get("/metrics"),
-        "request_duration_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\"} 2");
-}
-
-// https://github.com/runconduit/conduit/issues/613
-#[test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn metrics_endpoint_outbound_request_duration() {
-    let _ = env_logger::try_init();
-    let Fixture { client, metrics, proxy: _proxy } = Fixture::outbound();
-
-    info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
-
-    assert_contains!(metrics.get("/metrics"),
-        "request_duration_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\"} 1");
-
-    info!("client.get(/)");
-    assert_eq!(client.get("/"), "hello");
-
-    assert_contains!(metrics.get("/metrics"),
-        "request_duration_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\"} 2");
-}
-
 // Tests for destination labels provided by control plane service discovery.
 mod outbound_dst_labels {
     use super::support::*;
@@ -543,9 +502,7 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\"} 1");
         assert_contains!(metrics.get("/metrics"),
@@ -577,9 +534,7 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\"} 1");
         assert_contains!(metrics.get("/metrics"),
@@ -597,18 +552,14 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
         // stats recorded from the first request should still be present.
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\"} 1");
         assert_contains!(metrics.get("/metrics"),
@@ -638,9 +589,7 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\"} 1");
         assert_contains!(metrics.get("/metrics"),
@@ -657,18 +606,14 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
         // stats recorded from the first request should still be present.
         assert_contains!(metrics.get("/metrics"),
-            "request_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\"} 1");
-        assert_contains!(metrics.get("/metrics"),
-            "response_duration_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
             "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\"} 1");
         assert_contains!(metrics.get("/metrics"),
@@ -714,6 +659,17 @@ fn metrics_have_no_double_commas() {
     assert!(!scrape.contains(",,"), "outbound metrics had double comma");
 }
 
+
+#[test]
+fn metrics_has_start_time() {
+    let Fixture { metrics, proxy: _proxy, .. } = Fixture::inbound();
+    let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
+        .expect("compiling regex shouldn't fail");
+    assert_eventually!(
+        uptime_regex.find(&metrics.get("/metrics")).is_some()
+    )
+}
+
 mod transport {
     use super::support::*;
     use super::*;
@@ -727,12 +683,12 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client.get("/"), "hello");
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_open_total{direction=\"inbound\"} 1"
+            "{direction=\"inbound\"} 1"
         );
         // drop the client to force the connection to close.
         drop(client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"inbound\"} 1"
+            "tcp_accept_close_total{direction=\"inbound\",classification=\"success\"} 1"
         );
 
         // create a new client to force a new connection
@@ -746,7 +702,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"inbound\"} 2"
+            "tcp_accept_close_total{direction=\"inbound\",classification=\"success\"} 2"
         );
     }
 
@@ -785,7 +741,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"outbound\"} 1"
+            "tcp_accept_close_total{direction=\"outbound\",classification=\"success\"} 1"
         );
 
         // create a new client to force a new connection
@@ -799,7 +755,7 @@ mod transport {
         // drop the client to force the connection to close.
         drop(client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"outbound\"} 2"
+            "tcp_accept_close_total{direction=\"outbound\",classification=\"success\"} 2"
         );
     }
 
@@ -821,7 +777,7 @@ mod transport {
         assert_eq!(client2.get("/"), "hello");
         // server connection should be pooled
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connect_open_total{direction=\"outbound\"} 1");
+            "tcp_connect_open_total{direction=\"outbound\",classification=\"success\"} 1");
     }
 
     #[test]
@@ -862,7 +818,7 @@ mod transport {
 
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"inbound\"} 1");
+            "tcp_accept_close_total{direction=\"inbound\",classification=\"success\"} 1");
 
         let tcp_client = client.connect();
 
@@ -873,9 +829,10 @@ mod transport {
             "tcp_accept_open_total{direction=\"inbound\"} 2");
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"inbound\"} 2");
+            "tcp_accept_close_total{direction=\"inbound\",classification=\"success\"} 2");
     }
 
+    // https://github.com/runconduit/conduit/issues/831
     #[test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
     fn inbound_tcp_duration() {
@@ -893,18 +850,18 @@ mod transport {
         drop(tcp_client);
         // TODO: make assertions about buckets
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"inbound\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",classification=\"success\"} 2");
 
         let tcp_client = client.connect();
 
         tcp_client.write(msg1);
         assert_eq!(tcp_client.read(), msg2.as_bytes());
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"inbound\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",classification=\"success\"} 2");
 
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"inbound\"} 4");
+            "tcp_connection_duration_ms_count{direction=\"inbound\",classification=\"success\"} 4");
     }
 
     #[test]
@@ -917,7 +874,7 @@ mod transport {
         let msg1 = "custom tcp hello";
         let msg2 = "custom tcp bye";
         let expected = format!(
-            "sent_bytes{{direction=\"inbound\"}} {}",
+            "sent_bytes{{direction=\"inbound\",classification=\"success\"}} {}",
             msg1.len() + msg2.len()
         );
 
@@ -939,7 +896,7 @@ mod transport {
         let msg1 = "custom tcp hello";
         let msg2 = "custom tcp bye";
         let expected = format!(
-            "received_bytes{{direction=\"inbound\"}} {}",
+            "sent_bytes{{direction=\"inbound\",classification=\"success\"}} {}",
             msg1.len() + msg2.len()
         );
 
@@ -989,7 +946,7 @@ mod transport {
 
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"outbound\"} 1");
+            "tcp_accept_close_total{direction=\"outbound\",classification=\"success\"} 1");
 
         let tcp_client = client.connect();
 
@@ -1000,7 +957,7 @@ mod transport {
             "tcp_accept_open_total{direction=\"outbound\"} 2");
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_accept_close_total{direction=\"outbound\"} 2");
+            "tcp_accept_close_total{direction=\"outbound\",classification=\"success\"} 2");
     }
 
     #[test]
@@ -1020,18 +977,18 @@ mod transport {
         drop(tcp_client);
         // TODO: make assertions about buckets
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"outbound\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",classification=\"success\"} 2");
 
         let tcp_client = client.connect();
 
         tcp_client.write(msg1);
         assert_eq!(tcp_client.read(), msg2.as_bytes());
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"outbound\"} 2");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",classification=\"success\"} 2");
 
         drop(tcp_client);
         assert_contains!(metrics.get("/metrics"),
-            "tcp_connection_duration_ms_count{direction=\"outbound\"} 4");
+            "tcp_connection_duration_ms_count{direction=\"outbound\",classification=\"success\"} 4");
     }
 
     #[test]
@@ -1044,7 +1001,7 @@ mod transport {
         let msg1 = "custom tcp hello";
         let msg2 = "custom tcp bye";
         let expected = format!(
-            "sent_bytes{{direction=\"outbound\"}} {}",
+            "sent_bytes{{direction=\"outbound\",classification=\"success\"}} {}",
             msg1.len() + msg2.len()
         );
 
@@ -1066,7 +1023,7 @@ mod transport {
         let msg1 = "custom tcp hello";
         let msg2 = "custom tcp bye";
         let expected = format!(
-            "received_bytes{{direction=\"outbound\"}} {}",
+            "received_bytes{{direction=\"outbound\",classification=\"success\"}} {}",
             msg1.len() + msg2.len()
         );
 
