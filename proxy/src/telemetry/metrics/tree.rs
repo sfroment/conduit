@@ -266,8 +266,8 @@ impl DstTree {
     where
         L: FmtLabels,
     {
-        self.accept_metrics.prometheus_fmt(f, labels)?;
-        self.connect_metrics.prometheus_fmt(f, labels)?;
+        self.accept_metrics.prometheus_fmt(f, "accept", labels)?;
+        self.connect_metrics.prometheus_fmt(f, "connect", labels)?;
 
         for (ref class, ref tree) in &self.by_http_request {
             let label_authority =
@@ -469,11 +469,14 @@ impl TransportTree {
         metrics.close_total.incr();
     }
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, peer: &str, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        self.open_total.prometheus_fmt(f, "tcp_open_total", labels)?;
+        {
+            let name = format!("tcp_{}_open_total", peer);
+            self.open_total.prometheus_fmt(f, &name, labels)?;
+        }
 
         for (ref class, ref metrics) in &self.by_success {
             let l = match *class {
@@ -481,7 +484,7 @@ impl TransportTree {
                 &TransportEndClass::Failure => FAILURE_CLASSIFICATION,
             };
 
-            metrics.prometheus_fmt(f, &labels.append(&l))?;
+            metrics.prometheus_fmt(f, peer, &labels.append(&l))?;
         }
 
         Ok(())
@@ -489,14 +492,21 @@ impl TransportTree {
 }
 
 impl TransportEndMetrics {
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, peer: &str, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        self.close_total.prometheus_fmt(f, "tcp_close_total", labels)?;
-        self.lifetime.prometheus_fmt(f, "tcp_connection_duration_ms", labels)?;
-        self.rx_bytes_total.prometheus_fmt(f, "received_bytes", labels)?;
-        self.tx_bytes_total.prometheus_fmt(f, "sent_bytes", labels)?;
+        let n = format!("tcp_{}_close_total", peer);
+        self.close_total.prometheus_fmt(f, &n, labels)?;
+
+        let n = format!("tcp_{}_connection_duration_ms", peer);
+        self.lifetime.prometheus_fmt(f, &n, labels)?;
+
+        let n = format!("tcp_{}_received_bytes", peer);
+        self.rx_bytes_total.prometheus_fmt(f, &n, labels)?;
+
+        let n = format!("tcp_{}_sent_bytes", peer);
+        self.tx_bytes_total.prometheus_fmt(f, &n, labels)?;
 
         Ok(())
     }
