@@ -589,11 +589,11 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\"} 1");
+            "request_total{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
 
         {
             let alabels = HashMap::new();
@@ -606,18 +606,18 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/"), "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",dst_set_label=\"bar\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\"} 1");
+            "request_total{direction=\"outbound\",dst_set_label=\"bar\",authority=\"labeled.test.svc.cluster.local\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{direction=\"outbound\",dst_set_label=\"bar\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
         // stats recorded from the first request should still be present.
         assert_contains!(metrics.get("/metrics"),
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\"} 1");
+            "request_total{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\"} 1");
         assert_contains!(metrics.get("/metrics"),
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",classification=\"success\",status_code=\"200\"} 1");
+            "response_total{direction=\"outbound\",dst_set_label=\"foo\",authority=\"labeled.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
     }
 }
 
