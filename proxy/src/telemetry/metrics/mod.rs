@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Aggregates and serves Prometheus metrics.
 //!
 //! # A note on label formatting
