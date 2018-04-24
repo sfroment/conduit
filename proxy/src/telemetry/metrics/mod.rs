@@ -1,4 +1,4 @@
-//! Aggregates and serves Prometheus metrics.
+//! Records and serves Prometheus metrics.
 //!
 //! # A note on label formatting
 //!
@@ -52,7 +52,7 @@ pub use self::labels::DstLabels;
 
 /// Tracks Prometheus metrics
 #[derive(Debug)]
-pub struct Aggregate {
+pub struct Record {
     metrics: Arc<Mutex<tree::Root>>,
 }
 
@@ -64,45 +64,28 @@ pub struct Serve {
 
 /// Construct the Prometheus metrics.
 ///
-/// Returns the `Aggregate` and `Serve` sides. The `Serve` side
+/// Returns the `Record` and `Serve` sides. The `Serve` side
 /// is a Hyper service which can be used to create the server for the
-/// scrape endpoint, while the `Aggregate` side can receive updates to the
-/// metrics by calling `record_event`.
-pub fn new(process: &Arc<ctx::Process>) -> (Aggregate, Serve) {
+/// scrape endpoint, while the `Record` side can receive updates to the
+/// metrics by calling `record`.
+pub fn new(process: &Arc<ctx::Process>) -> (Record, Serve) {
     let metrics = Arc::new(Mutex::new(tree::Root::new(process)));
-    (Aggregate::new(&metrics), Serve::new(&metrics))
+    let agg = Record { metrics: metrics.clone() };
+    let srv = Serve { metrics };
+    (agg, srv)
 }
 
-// ===== impl Aggregate =====
+// ===== impl Record =====
 
-impl Aggregate {
-    fn new(metrics: &Arc<Mutex<tree::Root>>) -> Self {
-        Self {
-            metrics: metrics.clone(),
-        }
-    }
-
-    pub fn record_event(&mut self, event: &Event) {
-        self.metrics.lock().expect("metrics lock")
+impl Record {
+    pub fn record(&mut self, event: &Event) {
+        self.metrics.lock()
+            .expect("metrics lock")
             .record(event);
     }
 }
 
 // ===== impl Serve =====
-
-impl Serve {
-    fn new(metrics: &Arc<Mutex<tree::Root>>) -> Self {
-        Serve { metrics: metrics.clone() }
-    }
-
-    fn prometheus_metrics(&self) -> String {
-        //let _metrics = self.metrics.lock().expect("metrics lock");
-        let mut out = String::new();
-        write!(out, "{}", help::HTTP).expect("format HTTP help");
-        write!(out, "{}", help::TCP).expect("format TCP help");
-        out
-    }
-}
 
 impl HyperService for Serve {
     type Request = HyperRequest;
@@ -116,10 +99,23 @@ impl HyperService for Serve {
                 .with_status(StatusCode::NotFound));
         }
 
-        let body = self.prometheus_metrics();
-        future::ok(HyperResponse::new()
+        let metrics = self.metrics.lock().expect("metrics lock");
+        let body = Self::format_metrics(&metrics);
+
+        let rsp = HyperResponse::new()
             .with_header(ContentLength(body.len() as u64))
             .with_header(ContentType::plaintext())
-            .with_body(body))
+            .with_body(body);
+
+        future::ok(rsp)
+    }
+}
+
+impl Serve {
+    fn format_metrics(_metrics: &tree::Root) -> String {
+        let mut out = String::new();
+        write!(out, "{}", help::HTTP).expect("format HTTP help");
+        write!(out, "{}", help::TCP).expect("format TCP help");
+        out
     }
 }

@@ -34,10 +34,10 @@ pub struct MakeControl {
 #[derive(Debug)]
 pub struct Control {
     /// Aggregates scrapable metrics.
-    metrics_aggregate: metrics::Aggregate,
+    metrics_record: metrics::Record,
 
     /// Serves scrapable metrics.
-    metrics_service: metrics::Serve,
+    metrics_serve: metrics::Serve,
 
     /// Receives telemetry events.
     rx: Option<Receiver<Event>>,
@@ -76,12 +76,12 @@ impl MakeControl {
     /// - `Ok(())` if the timeout was successfully created.
     /// - `Err(io::Error)` if the timeout could not be created.
     pub fn make_control(self, taps: &Arc<Mutex<Taps>>, handle: &Handle) -> io::Result<Control> {
-        let (metrics_aggregate, metrics_service) =
+        let (metrics_record, metrics_serve) =
             metrics::new(&self.process_ctx);
 
         Ok(Control {
-            metrics_aggregate,
-            metrics_service,
+            metrics_record,
+            metrics_serve,
             rx: Some(self.rx),
             taps: Some(taps.clone()),
             handle: handle.clone(),
@@ -111,7 +111,7 @@ impl Control {
         -> Box<Future<Item = (), Error = io::Error> + 'static>
     {
         use hyper;
-        let service = self.metrics_service.clone();
+        let service = self.metrics_serve.clone();
         let hyper = hyper::server::Http::<hyper::Chunk>::new();
         bound_port.listen_and_fold(
             &self.handle,
@@ -146,7 +146,7 @@ impl Future for Control {
                         }
                     }
 
-                    self.metrics_aggregate.record_event(&ev);
+                    self.metrics_record.record(&ev);
                 }
                 None => {
                     debug!("events finished");
