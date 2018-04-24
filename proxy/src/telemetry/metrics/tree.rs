@@ -1,6 +1,6 @@
 use http;
 use indexmap::IndexMap;
-use std::fmt::{self, Write};
+use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -187,16 +187,14 @@ impl Root {
 
 impl fmt::Display for Root {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut out = String::new();
-
-        write!(out, "{}", help::HTTP)?;
-        write!(out, "{}", help::TCP)?;
+        write!(f, "{}", help::HTTP)?;
+        write!(f, "{}", help::TCP)?;
 
         self.inbound.prometheus_fmt(f, &"direction=\"inbound\"")?;
         self.outbound.prometheus_fmt(f, &"direction=\"outbound\"")?;
 
-        writeln!(out, "")?;
-        writeln!(out, "process_start_time_seconds {}", self.start_time)?;
+        writeln!(f, "")?;
+        writeln!(f, "process_start_time_seconds {}", self.start_time)?;
 
         Ok(())
     }
