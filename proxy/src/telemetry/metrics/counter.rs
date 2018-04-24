@@ -46,7 +46,7 @@ impl Counter {
             labels.fmt_labels(f)?;
             write!(f, "}}")?;
         }
-        write!(f, " {}", self.0)
+        writeln!(f, " {}", self.0)
     }
 }
 

@@ -157,7 +157,7 @@ impl Histogram {
             labels.fmt_labels(f)?;
             write!(f, "}}")?;
         }
-        writeln!(f, "{}", total_count)?;
+        writeln!(f, " {}", total_count)?;
 
         write!(f, "{}_sum", name)?;
         if !labels.is_empty() {
@@ -165,7 +165,7 @@ impl Histogram {
             labels.fmt_labels(f)?;
             write!(f, "}}")?;
         }
-        writeln!(f, "{}", self.sum_in_ms())?;
+        writeln!(f, " {}", self.sum_in_ms())?;
 
         Ok(())
     }
