@@ -2,83 +2,87 @@ use std::fmt;
 
 pub const HTTP: Section = Section(&[
     Help {
-        kind: "counter",
-        name: "request_total",
-        help: "A counter of the number of requests the proxy has received.",
+        name: super::HTTP_REQUEST_TOTAL_KEY,
+        help: "Total number of HTTP requests the proxy has routed.",
+        kind: Kind::Counter,
     },
     Help {
-        kind: "counter",
-        name: "response_total",
-        help: "A counter of the number of responses the proxy has received.",
+        name: super::HTTP_RESPONSE_TOTAL_KEY,
+        help: "Total number of HTTP resonses the proxy has served.",
+        kind: Kind::Counter,
     },
     Help {
-        kind: "histogram",
-        name: "response_latency_ms",
-        help: "A histogram of the total latency of a response. This is measured \
-        from when the request headers are received to when the response \
-        stream has completed.",
+        name: super::HTTP_RESPONSE_LATENCY_KEY,
+        help: "HTTP request latencies, in milliseconds.",
+        kind: Kind::Histogram,
     },
 ]);
 
 pub const TCP: Section = Section(&[
     Help {
-        kind: "counter",
-        name: "tcp_accept_open_total",
-        help: "A counter of the total number of transport connections which \
-            have been accepted by the proxy.",
+        name: super::TCP_OPEN_TOTAL_KEY,
+        help: "Total number of opened connections.",
+        kind: Kind::Counter,
     },
     Help {
-        kind: "counter",
-        name: "tcp_accept_close_total",
-        help: "A counter of the total number of transport connections accepted \
-            by the proxy which have been closed.",
+        name: super::TCP_CLOSE_TOTAL_KEY,
+        help: "Total number of closed connections.",
+        kind: Kind::Counter,
     },
     Help {
-        kind: "counter",
-        name: "tcp_connect_open_total",
-        help: "A counter of the total number of transport connections which \
-            have been opened by the proxy.",
+        name: super::TCP_OPEN_CONNECTIONS_KEY,
+        help: "Open connections.",
+        kind: Kind::Gauge,
     },
     Help {
-        kind: "counter",
-        name: "tcp_connect_close_total",
-        help: "A counter of the total number of transport connections opened \
-            by the proxy which have been closed.",
+        name: super::TCP_CONNECTION_DURATION_KEY,
+        help: "Connection lifetimes, in milliseconds",
+        kind: Kind::Histogram,
     },
     Help {
-        kind: "histogram",
-        name: "tcp_connection_duration_ms",
-        help: "A histogram of the duration of the lifetime of a connection, in milliseconds",
+        name: super::TCP_READ_BYTES_KEY,
+        help: "Total number of bytes read from peers.",
+        kind: Kind::Counter,
     },
     Help {
-        kind: "counter",
-        name: "received_bytes",
-        help: "A counter of the total number of recieved bytes."
+        name: super::TCP_WRITE_BYTES_KEY,
+        help: "Total number of bytes written to peers.",
+        kind: Kind::Counter,
     },
+]);
+
+pub const SYSTEM: Section = Section(&[
     Help {
-        kind: "counter",
-        name: "sent_bytes",
-        help: "A counter of the total number of sent bytes."
-    },
+        name: super::PROCESS_START_TIME_KEY,
+        help: "Number of seconds since the Unix epoch at the time the process started.",
+        kind: Kind::Gauge,
+    }
 ]);
 
 /// Describes a metric.
 struct Help<'a> {
-    kind: &'a str,
     name: &'a str,
     help: &'a str,
+    kind: Kind,
+}
+
+enum Kind {
+    Counter,
+    Gauge,
+    Histogram,
 }
 
 pub struct Section<'a>(&'a [Help<'a>]);
 
 impl<'a> fmt::Display for Help<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-            "# HELP {name} {help}\n# TYPE {name} {kind}\n",
-            name = self.name,
-            kind = self.kind,
-            help = self.help,
-        )
+        writeln!(f, "# HELP {} {}", self.name, self.help)?;
+        writeln!(f, "# TYPE {} {}", self.name, match self.kind {
+            Kind::Counter => "counter",
+            Kind::Gauge => "gauge",
+            Kind::Histogram => "histogram",
+        })?;
+        Ok(())
     }
 }
 
@@ -86,7 +90,7 @@ impl<'a> fmt::Display for Section<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for help in self.0 {
             help.fmt(f)?;
-            writeln!(f, "")?;
+            f.write_str("\n")?;
         }
         Ok(())
     }

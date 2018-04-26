@@ -10,9 +10,11 @@ use telemetry::event::{self, Event};
 use super::{FmtMetric, FmtMetrics};
 use super::counter::Counter;
 use super::gauge::Gauge;
-use super::help;
 use super::labels::{DstLabels, FmtLabels, FmtLabelsFn};
 use super::latency::Histogram;
+
+const SUCCESS_CLASS: &'static str = "classification=\"success\"";
+const FAILURE_CLASS: &'static str = "classification=\"failure\"";
 
 #[derive(Clone, Debug)]
 pub struct Root {
@@ -109,7 +111,7 @@ impl Root {
         let start_time = process
             .start_time
             .duration_since(UNIX_EPOCH)
-            .expect("process start time should not be before the beginning of the Unix epoch")
+            .expect("process start after the Unix epoch")
             .as_secs();
 
         Self {
@@ -198,15 +200,9 @@ impl Root {
 
 impl fmt::Display for Root {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", help::HTTP)?;
-        write!(f, "{}", help::TCP)?;
-
+        writeln!(f, "{} {}", super::PROCESS_START_TIME_KEY, self.start_time)?;
         self.inbound.fmt_metrics(f, &"direction=\"inbound\"")?;
         self.outbound.fmt_metrics(f, &"direction=\"outbound\"")?;
-
-        writeln!(f, "")?;
-        writeln!(f, "process_start_time_seconds {}", self.start_time)?;
-
         Ok(())
     }
 }
@@ -339,7 +335,8 @@ impl FmtMetrics for HttpRequestTree {
     where
         L: FmtLabels,
     {
-        self.metrics.total.fmt_metric(f, "request_total", labels)?;
+        self.metrics.total.fmt_metric(f, super::HTTP_REQUEST_TOTAL_KEY, labels)?;
+
         for (ref class, ref tree) in &self.by_response {
             tree.fmt_metrics(f, class, labels)?;
         }
@@ -449,15 +446,12 @@ impl FmtMetrics for HttpEndMetrics {
     where
         L: FmtLabels,
     {
-        self.total.fmt_metric(f, "response_total", labels)?;
-        self.latency.fmt_metric(f, "response_latency_ms", labels)?;
+        self.total.fmt_metric(f, super::HTTP_RESPONSE_TOTAL_KEY, labels)?;
+        self.latency.fmt_metric(f, super::HTTP_RESPONSE_LATENCY_KEY, labels)?;
 
         Ok(())
     }
 }
-
-const SUCCESS_CLASS: &'static str = "classification=\"success\"";
-const FAILURE_CLASS: &'static str = "classification=\"failure\"";
 
 impl TransportTree {
     fn open(&mut self) {
@@ -483,10 +477,10 @@ impl FmtMetrics for TransportTree {
     where
         L: FmtLabels,
     {
-        self.open_total.fmt_metric(f, "tcp_open_total", labels)?;
-        self.open_active.fmt_metric(f, "tcp_open_connections", labels)?;
-        self.rx_bytes_total.fmt_metric(f, "tcp_read_bytes_total", labels)?;
-        self.tx_bytes_total.fmt_metric(f, "tcp_write_bytes_total", labels)?;
+        self.open_total.fmt_metric(f, super::TCP_OPEN_TOTAL_KEY, labels)?;
+        self.open_active.fmt_metric(f, super::TCP_OPEN_CONNECTIONS_KEY, labels)?;
+        self.rx_bytes_total.fmt_metric(f, super::TCP_READ_BYTES_KEY, labels)?;
+        self.tx_bytes_total.fmt_metric(f, super::TCP_WRITE_BYTES_KEY, labels)?;
 
         for (ref class, ref metrics) in &self.by_end {
             use self::TransportEndClass::*;
@@ -507,8 +501,8 @@ impl FmtMetrics for TransportEndMetrics {
     where
         L: FmtLabels,
     {
-        self.close_total.fmt_metric(f, "tcp_close_total", labels)?;
-        self.lifetime.fmt_metric(f, "tcp_connection_duration_ms", labels)?;
+        self.close_total.fmt_metric(f, super::TCP_CLOSE_TOTAL_KEY, labels)?;
+        self.lifetime.fmt_metric(f, super::TCP_CONNECTION_DURATION_KEY, labels)?;
 
         Ok(())
     }

@@ -28,7 +28,7 @@
 //! end of the label set (all of which will make Prometheus angry).
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::io::Write;
+use std::io::{self, Write};
 
 use deflate::CompressionOptions;
 use deflate::write::GzEncoder;
@@ -54,6 +54,17 @@ mod tree;
 pub use self::gauge::Gauge;
 pub use self::labels::DstLabels;
 use self::labels::FmtLabels;
+
+const PROCESS_START_TIME_KEY: &'static str = "process_start_time_seconds";
+const HTTP_REQUEST_TOTAL_KEY: &'static str = "request_total";
+const HTTP_RESPONSE_TOTAL_KEY: &'static str = "response_total";
+const HTTP_RESPONSE_LATENCY_KEY: &'static str = "response_latency_ms";
+const TCP_READ_BYTES_KEY: &'static str = "tcp_read_bytes_total";
+const TCP_WRITE_BYTES_KEY: &str = "tcp_write_bytes_total";
+const TCP_OPEN_CONNECTIONS_KEY: &str = "tcp_open_connections";
+const TCP_OPEN_TOTAL_KEY: &str = "tcp_open_total";
+const TCP_CLOSE_TOTAL_KEY: &str = "tcp_close_total";
+const TCP_CONNECTION_DURATION_KEY: &'static str = "tcp_connection_duration_ms";
 
 /// Tracks Prometheus metrics
 #[derive(Debug)]
@@ -116,6 +127,13 @@ impl Serve {
         }
         false
     }
+
+    fn write_metrics<W: Write>(&self, buf: &mut W) -> io::Result<()> {
+        write!(buf, "{}", help::SYSTEM)?;
+        write!(buf, "{}", help::HTTP)?;
+        write!(buf, "{}", help::TCP)?;
+        write!(buf, "{}", *self.metrics.lock().expect("metrics lock"))
+    }
 }
 
 impl HyperService for Serve {
@@ -130,12 +148,10 @@ impl HyperService for Serve {
                 .with_status(StatusCode::NotFound));
         }
 
-        let metrics = self.metrics.lock().expect("metrics lock");
-
         let rsp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
-            if let Err(e) = write!(&mut writer, "{}", *metrics) {
+            if let Err(e) = self.write_metrics(&mut writer) {
                 return future::err(e.into());
             }
             let buf = match writer.finish() {
@@ -149,7 +165,7 @@ impl HyperService for Serve {
                 .with_body(Body::from(buf))
         } else {
             let mut buf = Vec::<u8>::new();
-            if let Err(e) = write!(&mut buf, "{}", *metrics) {
+            if let Err(e) = self.write_metrics(&mut buf) {
                 return future::err(e.into());
             }
 
