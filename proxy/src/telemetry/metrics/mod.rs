@@ -26,26 +26,20 @@
 //! labels, we can add new labels or modify the existing ones without having
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
-use std::{
-    fmt,
-    io::{self, Write},
-    marker::PhantomData,
-    sync::{Arc, Mutex}
-};
+use std::fmt;
+use std::io::{self, Write};
+use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
-use deflate::{
-    CompressionOptions,
-    write::GzEncoder,
-};
+use deflate::CompressionOptions;
+use deflate::write::GzEncoder;
 use futures::future::{self, FutureResult};
-use hyper::{
-    self, Body, StatusCode,
-    header::{AcceptEncoding, ContentEncoding, ContentType, Encoding, QualityItem},
-    server::{
-        Response as HyperResponse,
-        Request as HyperRequest,
-        Service as HyperService,
-    },
+use hyper::{self, Body, StatusCode};
+use hyper::header::{AcceptEncoding, ContentEncoding, ContentType, Encoding, QualityItem};
+use hyper::server::{
+    Request as HyperRequest,
+    Response as HyperResponse,
+    Service as HyperService,
 };
 
 use ctx;
@@ -186,22 +180,25 @@ impl Serve {
         false
     }
 
-    fn write_help<W: Write>(&self, buf: &mut W) -> io::Result<()> {
+    fn write_help<W: Write>(buf: &mut W) -> io::Result<()> {
         write!(buf, "{}", PROCESS_START_TIME)?;
+
         write!(buf, "{}", HTTP_REQUEST_TOTAL)?;
         write!(buf, "{}", HTTP_RESPONSE_TOTAL)?;
         write!(buf, "{}", HTTP_RESPONSE_LATENCY)?;
+
         write!(buf, "{}", TCP_OPEN_TOTAL)?;
-        write!(buf, "{}", TCP_OPEN_TOTAL)?;
+        write!(buf, "{}", TCP_CLOSE_TOTAL)?;
         write!(buf, "{}", TCP_OPEN_CONNECTIONS)?;
         write!(buf, "{}", TCP_CONNECTION_DURATION)?;
         write!(buf, "{}", TCP_READ_BYTES)?;
         write!(buf, "{}", TCP_WRITE_BYTES)?;
+
         Ok(())
     }
 
     fn write_metrics<W: Write>(&self, buf: &mut W) -> io::Result<()> {
-        self.write_help(buf)?;
+        Self::write_help(buf)?;
         write!(buf, "{}", *self.metrics.lock().expect("metrics lock"))
     }
 }
