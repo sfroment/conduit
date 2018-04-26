@@ -26,6 +26,7 @@
 //! labels, we can add new labels or modify the existing ones without having
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::io::Write;
 
@@ -44,12 +45,15 @@ use ctx;
 use telemetry::event::Event;
 
 mod counter;
+mod gauge;
 mod help;
 mod labels;
 mod latency;
 mod tree;
 
+pub use self::gauge::Gauge;
 pub use self::labels::DstLabels;
+use self::labels::FmtLabels;
 
 /// Tracks Prometheus metrics
 #[derive(Debug)]
@@ -61,6 +65,16 @@ pub struct Record {
 #[derive(Clone, Debug)]
 pub struct Serve {
     metrics: Arc<Mutex<tree::Root>>,
+}
+
+pub trait FmtMetrics {
+    fn fmt_metrics<L: FmtLabels>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result;
+}
+
+pub trait FmtMetric {
+    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+    where
+        L : FmtLabels;
 }
 
 /// Construct the Prometheus metrics.
@@ -115,7 +129,6 @@ impl HyperService for Serve {
         }
 
         let metrics = self.metrics.lock().expect("metrics lock");
-
 
         let rsp = if Self::is_gzip(&req) {
             trace!("gzipping metrics");

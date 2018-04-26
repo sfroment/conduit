@@ -3,7 +3,8 @@ use std::{fmt, ops, u32};
 use std::num::Wrapping;
 use std::time::Duration;
 
-use super::labels::FmtLabels;
+use super::FmtMetric;
+use super::labels::{FmtLabels, FmtLabelsFn};
 
 use super::counter::Counter;
 
@@ -60,9 +61,8 @@ pub const BUCKET_BOUNDS: [Latency; NUM_BUCKETS] = [
 ];
 
 /// A series of latency values and counts.
-#[derive(Debug, Default, Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct Histogram {
-
     /// Array of buckets in which to count latencies.
     ///
     /// The upper bound of a given bucket `i` is given in `BUCKET_BOUNDS[i]`.
@@ -99,7 +99,6 @@ pub struct Latency(u32);
 // ===== impl Histogram =====
 
 impl Histogram {
-
     /// Observe a measurement
     pub fn observe<I>(&mut self, measurement: I)
     where
@@ -121,10 +120,12 @@ impl Histogram {
     fn sum_in_ms(&self) -> f64 {
         self.sum.0 as f64 / MS_TO_TENTHS_OF_MS as f64
     }
+}
 
-    pub fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+impl FmtMetric for Histogram {
+    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
     where
-        L: FmtLabels,
+        L: FmtLabels
     {
         // Look up the bucket numbers against the BUCKET_BOUNDS array
         // to turn them into upper bounds.
@@ -138,31 +139,22 @@ impl Histogram {
         // Since Prometheus expects each bucket's value to be the sum of
         // the number of values in this bucket and all lower buckets,
         // track the total count here.
-        let mut total_count = 0;
+        let mut total_count = Counter::default();
         for (le, count) in bounds_and_counts {
-            // Add this bucket's count to the total count.
             total_count += count;
-            write!(f, "{}_bucket{{", name)?;
-            if !labels.is_empty() {
-                labels.fmt_labels(f)?;
-                write!(f, ",")?;
-            }
-            writeln!(f, "le=\"{}\"}} {}", le, total_count)?;
+
+            let le_labels = FmtLabelsFn::from(|f: &mut fmt::Formatter| {
+                write!(f, "le=\"{}\"", le)
+            });
+            total_count.fmt_metric(f, &format!("{}_bucket", name), &labels.append(&le_labels))?;
         }
 
-        // Print the total count and histogram sum stats.
-        write!(f, "{}_count", name)?;
-        if !labels.is_empty() {
-            write!(f, "{{")?;
-            labels.fmt_labels(f)?;
-            write!(f, "}}")?;
-        }
-        writeln!(f, " {}", total_count)?;
+        total_count.fmt_metric(f, &format!("{}_count", name), labels)?;
 
         write!(f, "{}_sum", name)?;
         if !labels.is_empty() {
             write!(f, "{{")?;
-            labels.fmt_labels(f)?;
+            labels.fmt(f)?;
             write!(f, "}}")?;
         }
         writeln!(f, " {}", self.sum_in_ms())?;

@@ -12,10 +12,10 @@ pub struct DstLabels {
 #[derive(Debug)]
 pub struct AppendLabels<'a, A: FmtLabels + 'a, B: FmtLabels + 'a>(&'a A, &'a B);
 
-pub trait FmtLabels {
-    fn is_empty(&self) -> bool;
+pub struct FmtLabelsFn<F>(F);
 
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result;
+pub trait FmtLabels: fmt::Display {
+    fn is_empty(&self) -> bool;
 
     fn append<'a, B: FmtLabels>(&'a self, b: &'a B) -> AppendLabels<'a, Self, B>
     where
@@ -81,23 +81,11 @@ impl FmtLabels for DstLabels {
     fn is_empty(&self) -> bool {
         self.formatted.is_empty()
     }
-
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self.formatted.as_ref(), f)
-    }
 }
 
-impl<L: FmtLabels> FmtLabels for Option<L> {
-    fn is_empty(&self) -> bool {
-        self.as_ref().map(|d| d.is_empty()).unwrap_or(true)
-    }
-
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(ref dst) = self.as_ref() {
-            dst.fmt_labels(f)?;
-        }
-
-        Ok(())
+impl fmt::Display for DstLabels {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self.formatted.as_ref(), f)
     }
 }
 
@@ -105,32 +93,32 @@ impl<'a> FmtLabels for &'a str {
     fn is_empty(&self) -> bool {
         str::is_empty(self)
     }
-
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
 }
 
-impl<F> FmtLabels for F
+impl<F> FmtLabels for FmtLabelsFn<F>
 where
     F: Fn(&mut fmt::Formatter) -> fmt::Result
 {
     fn is_empty(&self) -> bool {
         false
     }
+}
 
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (self)(f)
+impl<F> fmt::Display for FmtLabelsFn<F>
+where
+    F: Fn(&mut fmt::Formatter) -> fmt::Result
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (self.0)(f)
     }
 }
 
-impl FmtLabels for () {
-    fn is_empty(&self) -> bool {
-        true
-    }
-
-    fn fmt_labels(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        Ok(())
+impl<F> From<F> for FmtLabelsFn<F>
+where
+    F: Fn(&mut fmt::Formatter) -> fmt::Result
+{
+    fn from(f: F) -> Self {
+        FmtLabelsFn(f)
     }
 }
 
@@ -138,16 +126,18 @@ impl<'a, A: FmtLabels + 'a, B: FmtLabels + 'a> FmtLabels for AppendLabels<'a, A,
     fn is_empty(&self) -> bool {
         self.0.is_empty() && self.1.is_empty()
     }
+}
 
-    fn fmt_labels(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<'a, A: FmtLabels + 'a, B: FmtLabels + 'a> fmt::Display for AppendLabels<'a, A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match (self.0.is_empty(), self.1.is_empty()) {
             (true, true) => Ok(()),
-            (false, true) => self.0.fmt_labels(f),
-            (true, false) => self.1.fmt_labels(f),
+            (false, true) => self.0.fmt(f),
+            (true, false) => self.1.fmt(f),
             (false, false) => {
-                self.0.fmt_labels(f)?;
+                self.0.fmt(f)?;
                 write!(f, ",")?;
-                self.1.fmt_labels(f)
+                self.1.fmt(f)
             }
         }
     }

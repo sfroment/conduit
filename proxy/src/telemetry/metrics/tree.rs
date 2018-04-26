@@ -7,9 +7,11 @@ use std::time::{Duration, UNIX_EPOCH};
 use ctx;
 use telemetry::event::{self, Event};
 
+use super::{FmtMetric, FmtMetrics};
 use super::counter::Counter;
+use super::gauge::Gauge;
 use super::help;
-use super::labels::{DstLabels, FmtLabels};
+use super::labels::{DstLabels, FmtLabels, FmtLabelsFn};
 use super::latency::Histogram;
 
 #[derive(Clone, Debug)]
@@ -31,8 +33,8 @@ struct DstClass {
 
 #[derive(Clone, Debug, Default)]
 struct DstTree {
-    accept_metrics: TransportTree,
-    connect_metrics: TransportTree,
+    src_tcp_metrics: TransportTree,
+    dst_tcp_metrics: TransportTree,
 
     by_http_request: IndexMap<HttpRequestClass, HttpRequestTree>,
 }
@@ -40,7 +42,11 @@ struct DstTree {
 #[derive(Clone, Debug, Default)]
 struct TransportTree {
     open_total: Counter,
-    by_success: IndexMap<TransportEndClass, TransportEndMetrics>,
+    open_active: Gauge,
+    rx_bytes_total: Counter,
+    tx_bytes_total: Counter,
+
+    by_end: IndexMap<TransportEndClass, TransportEndMetrics>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,8 +59,6 @@ enum TransportEndClass {
 struct TransportEndMetrics {
     close_total: Counter,
     lifetime: Histogram,
-    rx_bytes_total: Counter,
-    tx_bytes_total: Counter,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -109,12 +113,8 @@ impl Root {
             .as_secs();
 
         Self {
-            inbound: ProxyTree {
-                by_dst: IndexMap::new(),
-            },
-            outbound: ProxyTree {
-                by_dst: IndexMap::new(),
-            },
+            inbound:  ProxyTree::default(),
+            outbound: ProxyTree::default(),
             start_time,
         }
     }
@@ -201,8 +201,8 @@ impl fmt::Display for Root {
         write!(f, "{}", help::HTTP)?;
         write!(f, "{}", help::TCP)?;
 
-        self.inbound.prometheus_fmt(f, &"direction=\"inbound\"")?;
-        self.outbound.prometheus_fmt(f, &"direction=\"outbound\"")?;
+        self.inbound.fmt_metrics(f, &"direction=\"inbound\"")?;
+        self.outbound.fmt_metrics(f, &"direction=\"outbound\"")?;
 
         writeln!(f, "")?;
         writeln!(f, "process_start_time_seconds {}", self.start_time)?;
@@ -220,14 +220,15 @@ impl ProxyTree {
             .entry(DstClass { labels })
             .or_insert_with(Default::default)
     }
+}
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
-    where
-        L: FmtLabels + Clone,
-    {
+impl FmtMetrics for ProxyTree {
+    fn fmt_metrics<L: FmtLabels>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result {
         for (ref class, ref tree) in &self.by_dst {
-            let dst_labels = labels.append(&class.labels);
-            tree.prometheus_fmt(f, &dst_labels)?;
+            match class.labels.as_ref() {
+                Some(l) => tree.fmt_metrics(f, &labels.append(l)),
+                None => tree.fmt_metrics(f, labels),
+            }?;
         }
 
         Ok(())
@@ -237,8 +238,8 @@ impl ProxyTree {
 impl DstTree {
     fn transport_mut(&mut self, ctx: &ctx::transport::Ctx) -> &mut TransportTree {
         match *ctx {
-            ctx::transport::Ctx::Client(_) => &mut self.connect_metrics,
-            ctx::transport::Ctx::Server(_) => &mut self.accept_metrics,
+            ctx::transport::Ctx::Client(_) => &mut self.dst_tcp_metrics,
+            ctx::transport::Ctx::Server(_) => &mut self.src_tcp_metrics,
         }
     }
 
@@ -261,19 +262,21 @@ impl DstTree {
             .entry(HttpResponseClass::Response { status_code })
             .or_insert_with(Default::default)
     }
+}
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+impl FmtMetrics for DstTree {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        self.accept_metrics.prometheus_fmt(f, "accept", labels)?;
-        self.connect_metrics.prometheus_fmt(f, "connect", labels)?;
+        self.src_tcp_metrics.fmt_metrics(f, &labels.append(&"peer=\"src\""))?;
+        self.dst_tcp_metrics.fmt_metrics(f, &labels.append(&"peer=\"dst\""))?;
 
         for (ref class, ref tree) in &self.by_http_request {
-            let label_authority =
-                |f: &mut fmt::Formatter| write!(f, "authority=\"{}\"", class.authority);
-            let labels = labels.append(&label_authority);
-            tree.prometheus_fmt(f, &labels)?;
+            let authority = FmtLabelsFn::from(|f: &mut fmt::Formatter| {
+                write!(f, "authority=\"{}\"", class.authority)
+            });
+            tree.fmt_metrics(f, &labels.append(&authority))?;
         }
 
         Ok(())
@@ -329,17 +332,16 @@ impl HttpRequestTree {
 
         end.add(fail.since_request_open);
     }
+}
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+impl FmtMetrics for HttpRequestTree {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        self.metrics
-            .total
-            .prometheus_fmt(f, "request_total", labels)?;
-
+        self.metrics.total.fmt_metric(f, "request_total", labels)?;
         for (ref class, ref tree) in &self.by_response {
-            tree.prometheus_fmt(f, class, labels)?;
+            tree.fmt_metrics(f, class, labels)?;
         }
 
         Ok(())
@@ -381,7 +383,7 @@ impl HttpResponseTree {
             .add(fail.since_request_open)
     }
 
-    fn prometheus_fmt<L>(
+    fn fmt_metrics<L>(
         &self,
         f: &mut fmt::Formatter,
         rsp_class: &HttpResponseClass,
@@ -391,43 +393,44 @@ impl HttpResponseTree {
         L: FmtLabels,
     {
         for (ref end_class, ref metrics) in &self.by_end {
-            let rsp_labels = |f: &mut fmt::Formatter| {
+            let rsp_labels = FmtLabelsFn::from(|f: &mut fmt::Formatter| {
                 match *rsp_class {
                     HttpResponseClass::Error { reason } => {
-                        write!(f, "{},error=\"{}\"", FAILURE_CLASSIFICATION, reason)
+                        f.write_str(FAILURE_CLASS)?;
+                        write!(f, "error=\"{}\"", reason)
                     }
 
                     HttpResponseClass::Response { status_code: http_status } => {
                         match *end_class {
                             &HttpEndClass::Eos => {
-                                if http_status < 500 {
-                                    write!(f, "{},", SUCCESS_CLASSIFICATION)?;
+                                f.write_str(if http_status < 500 {
+                                    SUCCESS_CLASS
                                 } else {
-                                    write!(f, "{},", FAILURE_CLASSIFICATION)?;
-                                }
-                                write!(f, "status_code=\"{}\"", http_status)
+                                    FAILURE_CLASS
+                                })?;
+                                write!(f, ",status_code=\"{}\"", http_status)
                             },
 
                             &HttpEndClass::Grpc { status_code: grpc_status } => {
-                                if grpc_status < 500 {
-                                    write!(f, "{},", SUCCESS_CLASSIFICATION)?;
+                                f.write_str(if grpc_status == 0 {
+                                    SUCCESS_CLASS
                                 } else {
-                                    write!(f, "{},", FAILURE_CLASSIFICATION)?;
-                                }
-                                write!(f, "status_code=\"{}\"", http_status)?;
-                                write!(f, "grpc_status_code=\"{}\"", grpc_status)
+                                    FAILURE_CLASS
+                                })?;
+                                write!(f, ",status_code=\"{}\"", http_status)?;
+                                write!(f, ",grpc_status_code=\"{}\"", grpc_status)
                             },
 
                             &HttpEndClass::Error { reason } => {
-                                write!(f, "{},", FAILURE_CLASSIFICATION)?;
+                                write!(f, "{},", FAILURE_CLASS)?;
                                 write!(f, "error=\"{}\"", reason)
                             },
                         }
                     }
                 }
-            };
+            });
 
-            metrics.prometheus_fmt(f, &labels.append(&rsp_labels))?;
+            metrics.fmt_metrics(f, &labels.append(&rsp_labels))?;
         }
 
         Ok(())
@@ -439,74 +442,73 @@ impl HttpEndMetrics {
         self.total.incr();
         self.latency.observe(latency);
     }
+}
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+impl FmtMetrics for HttpEndMetrics {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        self.total.prometheus_fmt(f, "response_total", labels)?;
-        self.latency
-            .prometheus_fmt(f, "response_latency_ms", labels)?;
+        self.total.fmt_metric(f, "response_total", labels)?;
+        self.latency.fmt_metric(f, "response_latency_ms", labels)?;
 
         Ok(())
     }
 }
 
-const SUCCESS_CLASSIFICATION: &'static str = "classification=\"success\"";
-const FAILURE_CLASSIFICATION: &'static str = "classification=\"failure\"";
+const SUCCESS_CLASS: &'static str = "classification=\"success\"";
+const FAILURE_CLASS: &'static str = "classification=\"failure\"";
 
 impl TransportTree {
     fn open(&mut self) {
         self.open_total.incr();
+        self.open_active.incr();
     }
 
     fn close(&mut self, close: &event::TransportClose) {
-        let class = if close.clean { TransportEndClass::Success } else { TransportEndClass::Failure };
-        let metrics = self.by_success.entry(class).or_insert_with(Default::default);
-        metrics.lifetime.observe(close.duration);
-        metrics.rx_bytes_total += close.rx_bytes;
-        metrics.tx_bytes_total += close.tx_bytes;
-        metrics.close_total.incr();
-    }
+        self.open_active.decr();
+        self.rx_bytes_total += close.rx_bytes;
+        self.tx_bytes_total += close.tx_bytes;
 
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, peer: &str, labels: &L) -> fmt::Result
+        let class =
+            if close.clean { TransportEndClass::Success } else { TransportEndClass::Failure };
+        let end = self.by_end.entry(class).or_insert_with(Default::default);
+        end.lifetime.observe(close.duration);
+        end.close_total.incr();
+    }
+}
+
+impl FmtMetrics for TransportTree {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        {
-            let name = format!("tcp_{}_open_total", peer);
-            self.open_total.prometheus_fmt(f, &name, labels)?;
-        }
+        self.open_total.fmt_metric(f, "tcp_open_total", labels)?;
+        self.open_active.fmt_metric(f, "tcp_open_connections", labels)?;
+        self.rx_bytes_total.fmt_metric(f, "tcp_read_bytes_total", labels)?;
+        self.tx_bytes_total.fmt_metric(f, "tcp_write_bytes_total", labels)?;
 
-        for (ref class, ref metrics) in &self.by_success {
+        for (ref class, ref metrics) in &self.by_end {
+            use self::TransportEndClass::*;
             let l = match *class {
-                &TransportEndClass::Success => SUCCESS_CLASSIFICATION,
-                &TransportEndClass::Failure => FAILURE_CLASSIFICATION,
+                &Success => SUCCESS_CLASS,
+                &Failure => FAILURE_CLASS,
             };
 
-            metrics.prometheus_fmt(f, peer, &labels.append(&l))?;
+            metrics.fmt_metrics(f, &labels.append(&l))?;
         }
 
         Ok(())
     }
 }
 
-impl TransportEndMetrics {
-    fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, peer: &str, labels: &L) -> fmt::Result
+impl FmtMetrics for TransportEndMetrics {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
-        let n = format!("tcp_{}_close_total", peer);
-        self.close_total.prometheus_fmt(f, &n, labels)?;
-
-        let n = format!("tcp_{}_connection_duration_ms", peer);
-        self.lifetime.prometheus_fmt(f, &n, labels)?;
-
-        let n = format!("tcp_{}_received_bytes", peer);
-        self.rx_bytes_total.prometheus_fmt(f, &n, labels)?;
-
-        let n = format!("tcp_{}_sent_bytes", peer);
-        self.tx_bytes_total.prometheus_fmt(f, &n, labels)?;
+        self.close_total.fmt_metric(f, "tcp_close_total", labels)?;
+        self.lifetime.fmt_metric(f, "tcp_connection_duration_ms", labels)?;
 
         Ok(())
     }

@@ -1,6 +1,7 @@
 use std::{fmt, ops};
 use std::num::Wrapping;
 
+use super::FmtMetric;
 use super::labels::FmtLabels;
 
 /// A Prometheus counter is represented by a `Wrapping` unsigned 64-bit int.
@@ -22,7 +23,7 @@ use super::labels::FmtLabels;
 // TODO: Implement Prometheus reset semantics correctly, taking into
 //       consideration that Prometheus models counters as `f64` and so
 //       there are only 52 significant bits.
-#[derive(Copy, Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Counter(Wrapping<u64>);
 
 // ===== impl Counter =====
@@ -31,20 +32,21 @@ impl Counter {
     /// Increment the counter by one.
     ///
     /// This function wraps on overflows.
-    pub fn incr(&mut self) -> &mut Self {
+    pub fn incr(&mut self) {
         (*self).0 += Wrapping(1);
-        self
     }
+}
 
-    pub fn prometheus_fmt<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+impl FmtMetric for Counter {
+    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
     where
         L: FmtLabels,
     {
         write!(f, "{}", name)?;
         if !labels.is_empty() {
-            write!(f, "{{")?;
-            labels.fmt_labels(f)?;
-            write!(f, "}}")?;
+            f.write_str("{")?;
+            labels.fmt(f)?;
+            f.write_str("}")?;
         }
         writeln!(f, " {}", self.0)
     }
