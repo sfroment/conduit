@@ -7,21 +7,6 @@ use super::labels::FmtLabels;
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Gauge(u64);
 
-impl FmtMetric for Gauge {
-    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
-    where
-        L: FmtLabels,
-    {
-        f.write_str(name)?;
-        if !labels.is_empty() {
-            f.write_str("{")?;
-            labels.fmt(f)?;
-            f.write_str("}")?;
-        }
-        writeln!(f, " {}", self.0)
-    }
-}
-
 impl Gauge {
     /// Increment the gauge by one.
     pub fn incr(&mut self) {
@@ -45,5 +30,20 @@ impl Gauge {
 impl From<u64> for Gauge {
     fn from(n: u64) -> Self {
         Gauge(n)
+    }
+}
+
+impl FmtMetric for Gauge {
+    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels,
+    {
+        f.write_str(name)?;
+        if !labels.is_empty() {
+            f.write_str("{")?;
+            labels.fmt(f)?;
+            f.write_str("}")?;
+        }
+        writeln!(f, " {}", self.0)
     }
 }

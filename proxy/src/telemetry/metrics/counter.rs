@@ -37,21 +37,6 @@ impl Counter {
     }
 }
 
-impl FmtMetric for Counter {
-    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
-    where
-        L: FmtLabels,
-    {
-        write!(f, "{}", name)?;
-        if !labels.is_empty() {
-            f.write_str("{")?;
-            labels.fmt(f)?;
-            f.write_str("}")?;
-        }
-        writeln!(f, " {}", self.0)
-    }
-}
-
 impl Into<u64> for Counter {
     fn into(self) -> u64 {
         (self.0).0 as u64
@@ -68,5 +53,20 @@ impl ops::Add for Counter {
 impl ops::AddAssign<u64> for Counter {
     fn add_assign(&mut self, rhs: u64) {
         (*self).0 += Wrapping(rhs)
+    }
+}
+
+impl FmtMetric for Counter {
+    fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
+    where
+        L: FmtLabels,
+    {
+        write!(f, "{}", name)?;
+        if !labels.is_empty() {
+            f.write_str("{")?;
+            labels.fmt(f)?;
+            f.write_str("}")?;
+        }
+        writeln!(f, " {}", self.0)
     }
 }
