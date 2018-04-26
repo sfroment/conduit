@@ -67,11 +67,13 @@ pub struct Serve {
     metrics: Arc<Mutex<tree::Root>>,
 }
 
-pub trait FmtMetrics {
-    fn fmt_metrics<L: FmtLabels>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result;
+trait FmtMetrics {
+    fn fmt_metrics<L>(&self, f: &mut fmt::Formatter, labels: &L) -> fmt::Result
+    where
+        L : FmtLabels;
 }
 
-pub trait FmtMetric {
+trait FmtMetric {
     fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
     where
         L : FmtLabels;
