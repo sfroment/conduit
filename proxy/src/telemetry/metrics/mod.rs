@@ -26,19 +26,26 @@
 //! labels, we can add new labels or modify the existing ones without having
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
-use std::fmt;
-use std::sync::{Arc, Mutex};
-use std::io::{self, Write};
+use std::{
+    fmt,
+    io::{self, Write},
+    marker::PhantomData,
+    sync::{Arc, Mutex}
+};
 
-use deflate::CompressionOptions;
-use deflate::write::GzEncoder;
+use deflate::{
+    CompressionOptions,
+    write::GzEncoder,
+};
 use futures::future::{self, FutureResult};
-use hyper::{self, Body, StatusCode};
-use hyper::header::{AcceptEncoding, ContentEncoding, ContentType, Encoding, QualityItem};
-use hyper::server::{
-    Response as HyperResponse,
-    Request as HyperRequest,
-    Service as HyperService,
+use hyper::{
+    self, Body, StatusCode,
+    header::{AcceptEncoding, ContentEncoding, ContentType, Encoding, QualityItem},
+    server::{
+        Response as HyperResponse,
+        Request as HyperRequest,
+        Service as HyperService,
+    },
 };
 
 use ctx;
@@ -46,25 +53,76 @@ use telemetry::event::Event;
 
 mod counter;
 mod gauge;
-mod help;
 mod labels;
 mod latency;
 mod tree;
 
+use self::counter::Counter;
+use self::latency::Histogram;
 pub use self::gauge::Gauge;
 pub use self::labels::DstLabels;
 use self::labels::FmtLabels;
 
-const PROCESS_START_TIME_KEY: &'static str = "process_start_time_seconds";
-const HTTP_REQUEST_TOTAL_KEY: &'static str = "request_total";
-const HTTP_RESPONSE_TOTAL_KEY: &'static str = "response_total";
-const HTTP_RESPONSE_LATENCY_KEY: &'static str = "response_latency_ms";
-const TCP_READ_BYTES_KEY: &'static str = "tcp_read_bytes_total";
-const TCP_WRITE_BYTES_KEY: &str = "tcp_write_bytes_total";
-const TCP_OPEN_CONNECTIONS_KEY: &str = "tcp_open_connections";
-const TCP_OPEN_TOTAL_KEY: &str = "tcp_open_total";
-const TCP_CLOSE_TOTAL_KEY: &str = "tcp_close_total";
-const TCP_CONNECTION_DURATION_KEY: &'static str = "tcp_connection_duration_ms";
+/// Describes a metric.
+struct Metric<'a, K> {
+    name: &'a str,
+    help: &'a str,
+    _p: PhantomData<K>,
+}
+
+const PROCESS_START_TIME: Metric<Gauge> = Metric {
+    name: "process_start_time_seconds",
+    help: "The time the process started, in seconds since the Unix epoch.",
+    _p: PhantomData,
+};
+
+const HTTP_REQUEST_TOTAL: Metric<Counter> = Metric {
+    name: "request_total",
+    help: "Total number of HTTP requests the proxy has routed.",
+    _p: PhantomData,
+};
+const HTTP_RESPONSE_TOTAL: Metric<Counter> = Metric {
+    name: "response_total",
+    help: "Total number of HTTP resonses the proxy has served.",
+    _p: PhantomData,
+};
+const HTTP_RESPONSE_LATENCY: Metric<Histogram> = Metric {
+    name: "response_latency_ms",
+    help: "HTTP request latencies, in milliseconds.",
+    _p: PhantomData,
+};
+
+const TCP_READ_BYTES: Metric<Counter> = Metric {
+    name: "tcp_read_bytes_total",
+    help: "Total number of bytes read from peers.",
+    _p: PhantomData,
+};
+const TCP_WRITE_BYTES: Metric<Counter> = Metric {
+    name: "tcp_write_bytes_total",
+    help: "Total number of bytes written to peers.",
+    _p: PhantomData,
+};
+const TCP_OPEN_CONNECTIONS: Metric<Gauge> = Metric {
+    name: "tcp_open_connections",
+    help: "Currently open connections.",
+    _p: PhantomData,
+};
+const TCP_OPEN_TOTAL: Metric<Counter> = Metric {
+    name: "tcp_open_total",
+    help: "Total number of opened connections.",
+    _p: PhantomData,
+};
+const TCP_CLOSE_TOTAL: Metric<Counter> = Metric {
+    name: "tcp_close_total",
+    help: "Total number of closed connections.",
+    _p: PhantomData,
+};
+const TCP_CONNECTION_DURATION: Metric<Histogram> = Metric {
+    name: "tcp_connection_duration_ms",
+    help: "Connection lifetimes, in milliseconds",
+    _p: PhantomData,
+};
+
 
 /// Tracks Prometheus metrics
 #[derive(Debug)]
@@ -128,10 +186,22 @@ impl Serve {
         false
     }
 
+    fn write_help<W: Write>(&self, buf: &mut W) -> io::Result<()> {
+        write!(buf, "{}", PROCESS_START_TIME)?;
+        write!(buf, "{}", HTTP_REQUEST_TOTAL)?;
+        write!(buf, "{}", HTTP_RESPONSE_TOTAL)?;
+        write!(buf, "{}", HTTP_RESPONSE_LATENCY)?;
+        write!(buf, "{}", TCP_OPEN_TOTAL)?;
+        write!(buf, "{}", TCP_OPEN_TOTAL)?;
+        write!(buf, "{}", TCP_OPEN_CONNECTIONS)?;
+        write!(buf, "{}", TCP_CONNECTION_DURATION)?;
+        write!(buf, "{}", TCP_READ_BYTES)?;
+        write!(buf, "{}", TCP_WRITE_BYTES)?;
+        Ok(())
+    }
+
     fn write_metrics<W: Write>(&self, buf: &mut W) -> io::Result<()> {
-        write!(buf, "{}", help::SYSTEM)?;
-        write!(buf, "{}", help::HTTP)?;
-        write!(buf, "{}", help::TCP)?;
+        self.write_help(buf)?;
         write!(buf, "{}", *self.metrics.lock().expect("metrics lock"))
     }
 }
@@ -175,5 +245,37 @@ impl HyperService for Serve {
         };
 
         future::ok(rsp)
+    }
+}
+
+
+impl<'a, K> Metric<'a, K> {
+    fn fmt_help(&self, f: &mut fmt::Formatter, kind: &str) -> fmt::Result {
+        writeln!(f, "# HELP {} {}", self.name, self.help)?;
+        writeln!(f, "# TYPE {} {}", self.name, kind)
+    }
+}
+
+impl<'a> fmt::Display for Metric<'a, Counter> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt_help(f, "counter")
+    }
+}
+
+impl<'a> fmt::Display for Metric<'a, Gauge> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt_help(f, "gauge")
+    }
+}
+
+impl<'a> fmt::Display for Metric<'a, Histogram> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt_help(f, "histogram")
+    }
+}
+
+impl<'a, M: FmtMetric> Metric<'a, M> {
+    fn fmt_metric<L: FmtLabels>(&self, f: &mut fmt::Formatter, metric: &M, labels: &L) -> fmt::Result {
+        metric.fmt_metric(f, self.name, labels)
     }
 }

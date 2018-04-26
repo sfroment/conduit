@@ -14,6 +14,8 @@ pub struct AppendLabels<'a, A: FmtLabels + 'a, B: FmtLabels + 'a>(&'a A, &'a B);
 
 pub struct FmtLabelsFn<F>(F);
 
+pub struct NoLabels;
+
 pub trait FmtLabels: fmt::Display {
     fn is_empty(&self) -> bool;
 
@@ -122,6 +124,17 @@ where
     }
 }
 
+impl FmtLabels for NoLabels {
+    fn is_empty(&self) -> bool {
+        true
+    }
+}
+
+impl fmt::Display for NoLabels {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        Ok(())
+    }
+}
 impl<'a, A: FmtLabels + 'a, B: FmtLabels + 'a> FmtLabels for AppendLabels<'a, A, B> {
     fn is_empty(&self) -> bool {
         self.0.is_empty() && self.1.is_empty()

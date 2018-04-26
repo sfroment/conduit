@@ -41,3 +41,9 @@ impl Gauge {
         }
     }
 }
+
+impl From<u64> for Gauge {
+    fn from(n: u64) -> Self {
+        Gauge(n)
+    }
+}

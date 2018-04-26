@@ -1158,7 +1158,7 @@ fn metrics_compression() {
 
     for &encoding in encodings {
         assert_contains!(do_scrape(encoding),
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",classification=\"success\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 1");
     }
 
     info!("client.get(/)");
@@ -1166,6 +1166,6 @@ fn metrics_compression() {
 
     for &encoding in encodings {
         assert_contains!(do_scrape(encoding),
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",classification=\"success\",status_code=\"200\"} 2");
+            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",classification=\"success\",status_code=\"200\"} 2");
     }
 }

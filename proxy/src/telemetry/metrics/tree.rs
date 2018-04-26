@@ -7,10 +7,10 @@ use std::time::{Duration, UNIX_EPOCH};
 use ctx;
 use telemetry::event::{self, Event};
 
-use super::{FmtMetric, FmtMetrics};
+use super::FmtMetrics;
 use super::counter::Counter;
 use super::gauge::Gauge;
-use super::labels::{DstLabels, FmtLabels, FmtLabelsFn};
+use super::labels::{DstLabels, FmtLabels, FmtLabelsFn, NoLabels};
 use super::latency::Histogram;
 
 const SUCCESS_CLASS: &'static str = "classification=\"success\"";
@@ -20,7 +20,7 @@ const FAILURE_CLASS: &'static str = "classification=\"failure\"";
 pub struct Root {
     inbound: ProxyTree,
     outbound: ProxyTree,
-    start_time: u64,
+    start_time: Gauge,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -108,8 +108,7 @@ pub struct HttpEndMetrics {
 
 impl Root {
     pub fn new(process: &Arc<ctx::Process>) -> Self {
-        let start_time = process
-            .start_time
+        let t0 = process.start_time
             .duration_since(UNIX_EPOCH)
             .expect("process start after the Unix epoch")
             .as_secs();
@@ -117,7 +116,7 @@ impl Root {
         Self {
             inbound:  ProxyTree::default(),
             outbound: ProxyTree::default(),
-            start_time,
+            start_time: t0.into(),
         }
     }
 
@@ -200,9 +199,11 @@ impl Root {
 
 impl fmt::Display for Root {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{} {}", super::PROCESS_START_TIME_KEY, self.start_time)?;
+        super::PROCESS_START_TIME.fmt_metric(f, &self.start_time, &NoLabels)?;
+
         self.inbound.fmt_metrics(f, &"direction=\"inbound\"")?;
         self.outbound.fmt_metrics(f, &"direction=\"outbound\"")?;
+
         Ok(())
     }
 }
@@ -335,7 +336,7 @@ impl FmtMetrics for HttpRequestTree {
     where
         L: FmtLabels,
     {
-        self.metrics.total.fmt_metric(f, super::HTTP_REQUEST_TOTAL_KEY, labels)?;
+        super::HTTP_REQUEST_TOTAL.fmt_metric(f, &self.metrics.total, labels)?;
 
         for (ref class, ref tree) in &self.by_response {
             tree.fmt_metrics(f, class, labels)?;
@@ -446,8 +447,8 @@ impl FmtMetrics for HttpEndMetrics {
     where
         L: FmtLabels,
     {
-        self.total.fmt_metric(f, super::HTTP_RESPONSE_TOTAL_KEY, labels)?;
-        self.latency.fmt_metric(f, super::HTTP_RESPONSE_LATENCY_KEY, labels)?;
+        super::HTTP_RESPONSE_LATENCY.fmt_metric(f, &self.latency, labels)?;
+        super::HTTP_RESPONSE_TOTAL.fmt_metric(f, &self.total, labels)?;
 
         Ok(())
     }
@@ -477,10 +478,10 @@ impl FmtMetrics for TransportTree {
     where
         L: FmtLabels,
     {
-        self.open_total.fmt_metric(f, super::TCP_OPEN_TOTAL_KEY, labels)?;
-        self.open_active.fmt_metric(f, super::TCP_OPEN_CONNECTIONS_KEY, labels)?;
-        self.rx_bytes_total.fmt_metric(f, super::TCP_READ_BYTES_KEY, labels)?;
-        self.tx_bytes_total.fmt_metric(f, super::TCP_WRITE_BYTES_KEY, labels)?;
+        super::TCP_OPEN_TOTAL.fmt_metric(f, &self.open_total, labels)?;
+        super::TCP_OPEN_CONNECTIONS.fmt_metric(f, &self.open_active, labels)?;
+        super::TCP_READ_BYTES.fmt_metric(f, &self.rx_bytes_total, labels)?;
+        super::TCP_WRITE_BYTES.fmt_metric(f, &self.tx_bytes_total, labels)?;
 
         for (ref class, ref metrics) in &self.by_end {
             use self::TransportEndClass::*;
@@ -501,8 +502,8 @@ impl FmtMetrics for TransportEndMetrics {
     where
         L: FmtLabels,
     {
-        self.close_total.fmt_metric(f, super::TCP_CLOSE_TOTAL_KEY, labels)?;
-        self.lifetime.fmt_metric(f, super::TCP_CONNECTION_DURATION_KEY, labels)?;
+        super::TCP_CLOSE_TOTAL.fmt_metric(f, &self.close_total, labels)?;
+        super::TCP_CONNECTION_DURATION.fmt_metric(f, &self.lifetime, labels)?;
 
         Ok(())
     }
