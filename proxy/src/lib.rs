@@ -2,12 +2,11 @@
 #![cfg_attr(feature = "cargo-clippy", allow(new_without_default_derive))]
 #![deny(warnings)]
 
-extern crate abstract_ns;
 extern crate bytes;
 extern crate conduit_proxy_controller_grpc;
 extern crate convert;
-extern crate domain;
 extern crate env_logger;
+extern crate deflate;
 #[macro_use]
 extern crate futures;
 extern crate futures_mpsc_lossy;
@@ -21,7 +20,6 @@ extern crate ipnet;
 extern crate libc;
 #[macro_use]
 extern crate log;
-extern crate ns_dns_tokio;
 #[cfg_attr(test, macro_use)]
 extern crate indexmap;
 extern crate prost;
@@ -43,6 +41,7 @@ extern crate tower_reconnect;
 extern crate conduit_proxy_router;
 extern crate tower_util;
 extern crate tower_in_flight_limit;
+extern crate trust_dns_resolver;
 
 use futures::*;
 
@@ -203,7 +202,11 @@ where
             config.event_buffer_capacity,
         );
 
-        let dns_config = dns::Config::from_file(&config.resolv_conf_path);
+        let dns_config = dns::Config::from_system_config()
+            .unwrap_or_else(|e| {
+                // TODO: Make DNS configuration infallible.
+                panic!("invalid DNS configuration: {:?}", e);
+            });
 
         let (control, control_bg) = control::new(dns_config.clone(), config.pod_namespace.clone());
 

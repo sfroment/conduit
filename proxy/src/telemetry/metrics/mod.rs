@@ -27,15 +27,17 @@
 //! to worry about missing commas, double commas, or trailing commas at the
 //! end of the label set (all of which will make Prometheus angry).
 use std::sync::{Arc, Mutex};
+use std::io::Write;
 
+use deflate::CompressionOptions;
+use deflate::write::GzEncoder;
 use futures::future::{self, FutureResult};
-use hyper;
-use hyper::header::{ContentLength, ContentType};
-use hyper::StatusCode;
+use hyper::{self, Body, StatusCode};
+use hyper::header::{AcceptEncoding, ContentEncoding, ContentType, Encoding, QualityItem};
 use hyper::server::{
-    Service as HyperService,
+    Response as HyperResponse,
     Request as HyperRequest,
-    Response as HyperResponse
+    Service as HyperService,
 };
 
 use ctx;
@@ -86,6 +88,20 @@ impl Record {
 
 // ===== impl Serve =====
 
+impl Serve {
+    fn is_gzip(req: &HyperRequest) -> bool {
+        if let Some(accept_encodings) = req
+            .headers()
+            .get::<AcceptEncoding>()
+        {
+            return accept_encodings
+                .iter()
+                .any(|&QualityItem { ref item, .. }| item == &Encoding::Gzip)
+        }
+        false
+    }
+}
+
 impl HyperService for Serve {
     type Request = HyperRequest;
     type Response = HyperResponse;
@@ -98,15 +114,34 @@ impl HyperService for Serve {
                 .with_status(StatusCode::NotFound));
         }
 
-        let body = {
-            let metrics = self.metrics.lock().expect("metrics lock");
-            format!("{}", metrics)
-        };
+        let metrics = self.metrics.lock().expect("metrics lock");
 
-        let rsp = HyperResponse::new()
-            .with_header(ContentLength(body.len() as u64))
-            .with_header(ContentType::plaintext())
-            .with_body(body);
+
+        let rsp = if Self::is_gzip(&req) {
+            trace!("gzipping metrics");
+            let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());
+            if let Err(e) = write!(&mut writer, "{}", *metrics) {
+                return future::err(e.into());
+            }
+            let buf = match writer.finish() {
+                Err(e) => return future::err(e.into()),
+                Ok(buf) => buf,
+            };
+
+            HyperResponse::new()
+                .with_header(ContentEncoding(vec![Encoding::Gzip]))
+                .with_header(ContentType::plaintext())
+                .with_body(Body::from(buf))
+        } else {
+            let mut buf = Vec::<u8>::new();
+            if let Err(e) = write!(&mut buf, "{}", *metrics) {
+                return future::err(e.into());
+            }
+
+            HyperResponse::new()
+                .with_header(ContentType::plaintext())
+                .with_body(Body::from(buf))
+        };
 
         future::ok(rsp)
     }
