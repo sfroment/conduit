@@ -108,13 +108,14 @@ pub struct HttpEndMetrics {
 
 impl Root {
     pub fn new(process: &Arc<ctx::Process>) -> Self {
-        let t0 = process.start_time
+        let t0 = process
+            .start_time
             .duration_since(UNIX_EPOCH)
             .expect("process start after the Unix epoch")
             .as_secs();
 
         Self {
-            inbound:  ProxyTree::default(),
+            inbound: ProxyTree::default(),
             outbound: ProxyTree::default(),
             start_time: t0.into(),
         }
@@ -266,8 +267,10 @@ impl FmtMetrics for DstTree {
     where
         L: FmtLabels,
     {
-        self.src_tcp_metrics.fmt_metrics(f, &labels.append(&"peer=\"src\""))?;
-        self.dst_tcp_metrics.fmt_metrics(f, &labels.append(&"peer=\"dst\""))?;
+        self.src_tcp_metrics
+            .fmt_metrics(f, &labels.append(&"peer=\"src\""))?;
+        self.dst_tcp_metrics
+            .fmt_metrics(f, &labels.append(&"peer=\"dst\""))?;
 
         for (ref class, ref tree) in &self.by_http_request {
             let authority = FmtLabelsFn::from(|f: &mut fmt::Formatter| {
@@ -391,41 +394,41 @@ impl HttpResponseTree {
         L: FmtLabels,
     {
         for (ref end_class, ref metrics) in &self.by_end {
-            let rsp_labels = FmtLabelsFn::from(|f: &mut fmt::Formatter| {
-                match *rsp_class {
-                    HttpResponseClass::Error { reason } => {
-                        f.write_str(FAILURE_CLASS)?;
+            let rsp_labels = FmtLabelsFn::from(|f: &mut fmt::Formatter| match *rsp_class {
+                HttpResponseClass::Error { reason } => {
+                    f.write_str(FAILURE_CLASS)?;
+                    write!(f, "error=\"{}\"", reason)
+                },
+
+                HttpResponseClass::Response {
+                    status_code: http_status,
+                } => match *end_class {
+                    &HttpEndClass::Eos => {
+                        f.write_str(if http_status < 500 {
+                            SUCCESS_CLASS
+                        } else {
+                            FAILURE_CLASS
+                        })?;
+                        write!(f, ",status_code=\"{}\"", http_status)
+                    },
+
+                    &HttpEndClass::Grpc {
+                        status_code: grpc_status,
+                    } => {
+                        f.write_str(if grpc_status == 0 {
+                            SUCCESS_CLASS
+                        } else {
+                            FAILURE_CLASS
+                        })?;
+                        write!(f, ",status_code=\"{}\"", http_status)?;
+                        write!(f, ",grpc_status_code=\"{}\"", grpc_status)
+                    },
+
+                    &HttpEndClass::Error { reason } => {
+                        write!(f, "{},", FAILURE_CLASS)?;
                         write!(f, "error=\"{}\"", reason)
-                    }
-
-                    HttpResponseClass::Response { status_code: http_status } => {
-                        match *end_class {
-                            &HttpEndClass::Eos => {
-                                f.write_str(if http_status < 500 {
-                                    SUCCESS_CLASS
-                                } else {
-                                    FAILURE_CLASS
-                                })?;
-                                write!(f, ",status_code=\"{}\"", http_status)
-                            },
-
-                            &HttpEndClass::Grpc { status_code: grpc_status } => {
-                                f.write_str(if grpc_status == 0 {
-                                    SUCCESS_CLASS
-                                } else {
-                                    FAILURE_CLASS
-                                })?;
-                                write!(f, ",status_code=\"{}\"", http_status)?;
-                                write!(f, ",grpc_status_code=\"{}\"", grpc_status)
-                            },
-
-                            &HttpEndClass::Error { reason } => {
-                                write!(f, "{},", FAILURE_CLASS)?;
-                                write!(f, "error=\"{}\"", reason)
-                            },
-                        }
-                    }
-                }
+                    },
+                },
             });
 
             metrics.fmt_metrics(f, &labels.append(&rsp_labels))?;
@@ -465,8 +468,11 @@ impl TransportTree {
         self.rx_bytes_total += close.rx_bytes;
         self.tx_bytes_total += close.tx_bytes;
 
-        let class =
-            if close.clean { TransportEndClass::Success } else { TransportEndClass::Failure };
+        let class = if close.clean {
+            TransportEndClass::Success
+        } else {
+            TransportEndClass::Failure
+        };
         let end = self.by_end.entry(class).or_insert_with(Default::default);
         end.lifetime.observe(close.duration);
         end.close_total.incr();

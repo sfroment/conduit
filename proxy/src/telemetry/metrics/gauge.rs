@@ -10,7 +10,7 @@ pub struct Gauge(u64);
 impl FmtMetric for Gauge {
     fn fmt_metric<L>(&self, f: &mut fmt::Formatter, name: &str, labels: &L) -> fmt::Result
     where
-        L: FmtLabels
+        L: FmtLabels,
     {
         f.write_str(name)?;
         if !labels.is_empty() {
