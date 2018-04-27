@@ -197,6 +197,14 @@ impl Serve {
         Ok(())
     }
 
+    /// **TODO** From the [prometheus docs][prom-fmt]:
+    ///
+    /// > All lines for a given metric must be provided as one uninterrupted group, with
+    /// > the optional HELP and TYPE lines first (in no particular order). Beyond that,
+    /// > reproducible sorting in repeated expositions is preferred but not required, i.e.
+    /// > do not sort if the computational cost is prohibitive.
+    ///
+    /// [prom-fmt]: https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details
     fn write_metrics<W: Write>(&self, buf: &mut W) -> io::Result<()> {
         Self::write_help(buf)?;
         write!(buf, "{}", *self.metrics.lock().expect("metrics lock"))
